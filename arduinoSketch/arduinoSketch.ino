@@ -18,4 +18,5 @@ void loop() {
     Serial.print(binaryValue(analogRead(pins[i])) + " ");
   }
   Serial.println("");
+  delay(500);
 }

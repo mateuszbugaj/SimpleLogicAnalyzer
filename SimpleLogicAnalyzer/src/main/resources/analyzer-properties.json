@@ -1,0 +1,5 @@
+{
+  "logicProbeProductID": "29987",
+  "usbUartProductID": "60000",
+  "signals": ["SDA", "SCL"]
+}

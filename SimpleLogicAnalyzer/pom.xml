@@ -45,6 +45,12 @@
             <version>2.10.3</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.15.2</version>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -67,7 +73,7 @@
                         <!-- Default configuration for running with: mvn clean javafx:run -->
                         <id>default-cli</id>
                         <configuration>
-                            <mainClass>com.simplelogicanalyzer/com.simplelogicanalyzer.HelloApplication</mainClass>
+                            <mainClass>com.simplelogicanalyzer/com.simplelogicanalyzer.SimpleLogicAnalyzer</mainClass>
                             <launcher>app</launcher>
                             <jlinkZipName>app</jlinkZipName>
                             <jlinkImageName>app</jlinkImageName>
