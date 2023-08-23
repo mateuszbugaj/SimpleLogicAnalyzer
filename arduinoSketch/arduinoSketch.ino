@@ -1,6 +1,9 @@
 #define ADC_THRESHOLD 512
-#define PIN_COUNT 2
-int pins[PIN_COUNT] = {A0, A1};
+#define PIN_COUNT 6
+#define INTERVAL 30
+#define ACTIVATION_LED 13
+int pins[PIN_COUNT] = {A0, A1, A2, A3, A4, A5};
+bool start = false;
 
 String binaryValue(int adcReading){
   if(adcReading > ADC_THRESHOLD){
@@ -11,12 +14,31 @@ String binaryValue(int adcReading){
 
 void setup() {
   Serial.begin(9600);
+  pinMode(ACTIVATION_LED, OUTPUT);
+  digitalWrite(ACTIVATION_LED, LOW);
 }
 
 void loop() {
-  for(int i = 0; i < PIN_COUNT; i++){
-    Serial.print(binaryValue(analogRead(pins[i])) + " ");
+  if(Serial.available() > 0){
+    String payload = Serial.readString();
+    payload.trim();
+    if(payload == "start"){
+      start = true;
+      digitalWrite(ACTIVATION_LED, HIGH);
+    }
+
+    if(payload == "stop"){
+      start = false;
+      digitalWrite(ACTIVATION_LED, LOW);
+    }
   }
-  Serial.println("");
-  delay(500);
+
+  if(start == true){
+    for(int i = 0; i < PIN_COUNT; i++){
+      Serial.print(binaryValue(analogRead(pins[i])) + " ");
+    }
+    Serial.println("");
+    delay(INTERVAL);
+  }
+
 }
