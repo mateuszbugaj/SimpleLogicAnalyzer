@@ -168,11 +168,11 @@ public class SimpleLogicAnalyzer extends Application {
 
         scene.addEventFilter(ScrollEvent.ANY, event -> {
             if(event.getDeltaX() != 0){
-                signals.forEach(i -> i.zoom.set(i.zoom.get() + (event.getDeltaX() > 0 ? -1 : 1)));
+                signals.forEach(signal -> signal.zoom(event.getDeltaX()));
             }
 
             if(event.getDeltaY() != 0){
-                signals.forEach(i -> i.scrollOffset.set(i.scrollOffset.get() + (event.getDeltaY() > 0 ? -1 : 1)));
+                signals.forEach(signal -> signal.scroll(event.getDeltaY()));
             }
         });
     }

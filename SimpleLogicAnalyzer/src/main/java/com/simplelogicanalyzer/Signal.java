@@ -34,4 +34,14 @@ public class Signal {
         scrollOffset.addListener(changeXAxisBoundsListener);
         zoom.addListener(changeXAxisBoundsListener);
     }
+
+    public void zoom(double delta){
+        int zoomSpeed = 5; // points per scroll
+        zoom.set(zoom.get() + zoomSpeed * (delta > 0 ? -1 : 1));
+    }
+
+    public void scroll(double delta){
+        int scrollSpeed = zoom.get() / 15;
+        scrollOffset.set(scrollOffset.get() + scrollSpeed * (delta > 0 ? -1 : 1));
+    }
 }
