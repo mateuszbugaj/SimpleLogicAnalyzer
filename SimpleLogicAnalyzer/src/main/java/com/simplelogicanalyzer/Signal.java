@@ -4,18 +4,24 @@ import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.collections.FXCollections;
+import javafx.scene.chart.Chart;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
 
 public class Signal {
     public String name;
-    public LineChart<Number, Number> lineChart;
+    public Chart lineChart;
     public XYChart.Series<Number, Number> series;
     public SimpleIntegerProperty scrollOffset;
     public SimpleIntegerProperty zoom;
+    public XYChart.Series<Number, Number> referenceSeries;
 
-    public Signal(String name, LineChart<Number, Number> lineChart, XYChart.Series<Number, Number> series, NumberAxis xAxis) {
+    public Signal(String name, Chart lineChart, XYChart.Series<Number, Number> series, NumberAxis xAxis){
+        this(name, lineChart, series, xAxis, series);
+    }
+
+    public Signal(String name, Chart lineChart, XYChart.Series<Number, Number> series, NumberAxis xAxis, XYChart.Series<Number, Number> referenceSeries) {
         this.name = name;
         this.lineChart = lineChart;
         this.series = series;
@@ -26,11 +32,12 @@ public class Signal {
         InvalidationListener changeXAxisBoundsListener = new InvalidationListener() {
             @Override
             public void invalidated(Observable observable) {
-                xAxis.setLowerBound(series.getData().size() - zoom.get() + scrollOffset.get());
-                xAxis.setUpperBound(series.getData().size() - 1 + scrollOffset.get());
+                xAxis.setLowerBound(referenceSeries.getData().size() - zoom.get() + scrollOffset.get());
+                xAxis.setUpperBound(referenceSeries.getData().size() - 1 + scrollOffset.get());
             }
         };
         series.getData().addListener(changeXAxisBoundsListener);
+        referenceSeries.getData().addListener(changeXAxisBoundsListener);
         scrollOffset.addListener(changeXAxisBoundsListener);
         zoom.addListener(changeXAxisBoundsListener);
     }
