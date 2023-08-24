@@ -79,7 +79,9 @@ public class SimpleLogicAnalyzer extends Application {
         chartVBox.prefWidthProperty().bind(scrollPane.widthProperty());
 
         Button startButton = new Button("START");
-        toolBar.getItems().add(startButton);
+        Button pauseButton = new Button("PAUSE");
+        Button clearButton = new Button("CLEAR");
+        toolBar.getItems().addAll(startButton, pauseButton, clearButton);
 
         ArrayList<Signal> signals = new ArrayList<>();
         for(int i = 0; i < configData.getSignals().size(); i++){
@@ -87,6 +89,8 @@ public class SimpleLogicAnalyzer extends Application {
             XYChart.Series<Number, Number> series = new XYChart.Series<>();
 
             NumberAxis xAxis = new NumberAxis();
+            xAxis.setTickLabelsVisible(false);
+            xAxis.setOpacity(0);
             NumberAxis yAxis = new NumberAxis();
             yAxis.setLabel(s);
 
@@ -208,6 +212,20 @@ public class SimpleLogicAnalyzer extends Application {
             }
         });
 
+        pauseButton.setOnAction(actionEvent -> {
+            if (pauseButton.getText().equals("PAUSE")){
+                pauseButton.setText("UNPAUSE");
+                signals.forEach(signal -> signal.pause(true));
+            } else {
+                pauseButton.setText("PAUSE");
+                signals.forEach(signal -> signal.pause(false));
+            }
+        });
+
+        clearButton.setOnAction(actionEvent -> {
+            signals.forEach(Signal::clear);
+        });
+
         scene  = new Scene(layout,800,600);
         stage.setScene(scene);
         stage.setFullScreen(true);
@@ -226,8 +244,6 @@ public class SimpleLogicAnalyzer extends Application {
 
     private static void configureChart(Chart chart, NumberAxis xAxis, NumberAxis yAxis){
         xAxis.setAutoRanging(false);
-        xAxis.setTickLabelsVisible(false);
-        xAxis.setOpacity(0);
 
         yAxis.setAutoRanging(false);
         yAxis.setLowerBound(-0.1);
@@ -244,8 +260,12 @@ public class SimpleLogicAnalyzer extends Application {
         var label = new Label(labelText);
 
         var pane = new Pane(label);
-        pane.setShape(new Circle(4.0));
+        Circle circle = new Circle(4.0);
+        pane.setShape(circle);
         pane.setScaleShape(false);
+
+        // Set background to red
+        pane.setStyle("-fx-background-color: blue;");
 
         label.setTextAlignment(TextAlignment.CENTER);
         label.setTranslateY(5);
