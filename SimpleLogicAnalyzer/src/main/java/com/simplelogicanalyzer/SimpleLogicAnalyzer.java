@@ -97,7 +97,7 @@ public class SimpleLogicAnalyzer extends Application {
             configureChart(lineChart, xAxis, yAxis);
             lineChart.setCreateSymbols(false);
             lineChart.prefWidthProperty().bind(layout.widthProperty());
-            lineChart.setMaxHeight(80);
+            lineChart.setPrefHeight(50);
 
             if(i%2==0){
                 series.getNode().setStyle("-fx-stroke:"+ "red" +";");

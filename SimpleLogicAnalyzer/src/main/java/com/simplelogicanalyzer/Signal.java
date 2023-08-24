@@ -20,6 +20,8 @@ public class Signal {
     public SimpleIntegerProperty scrollOffset;
     public SimpleIntegerProperty zoom;
     public InvalidationListener changeXAxisBoundsListener;
+    public boolean pause;
+    public int pauseAnchor;
 
     public Signal(String name, Chart lineChart, XYChart.Series<Number, Number> series, NumberAxis xAxis){
         this(name, lineChart, series, xAxis, series);
@@ -32,13 +34,17 @@ public class Signal {
         this.referenceSeries = referenceSeries;
         zoom = new SimpleIntegerProperty();
         scrollOffset = new SimpleIntegerProperty();
-        zoom.set(150);
 
         changeXAxisBoundsListener = new InvalidationListener() {
             @Override
             public void invalidated(Observable observable) {
-                xAxis.setLowerBound(referenceSeries.getData().size() - zoom.get() + scrollOffset.get());
-                xAxis.setUpperBound(referenceSeries.getData().size() - 1 + scrollOffset.get());
+                int pauseOffset = 0;
+                if(pause){
+                    pauseOffset = referenceSeries.getData().size() - pauseAnchor;
+                }
+
+                xAxis.setLowerBound(referenceSeries.getData().size() - zoom.get() + scrollOffset.get() - pauseOffset);
+                xAxis.setUpperBound(referenceSeries.getData().size() + scrollOffset.get() - pauseOffset);
             }
         };
 
@@ -46,6 +52,7 @@ public class Signal {
         referenceSeries.getData().addListener(changeXAxisBoundsListener);
         scrollOffset.addListener(changeXAxisBoundsListener);
         zoom.addListener(changeXAxisBoundsListener);
+        zoom.set(300);
     }
 
     public void zoom(double delta){
@@ -59,13 +66,9 @@ public class Signal {
     }
 
     public void pause(boolean value){
-        if (value == true){
-            series.getData().removeListener(changeXAxisBoundsListener);
-            referenceSeries.getData().removeListener(changeXAxisBoundsListener);
-        } else {
-            series.getData().addListener(changeXAxisBoundsListener);
-            referenceSeries.getData().addListener(changeXAxisBoundsListener);
-            scrollOffset.set(0);
+        pause = value;
+        if(pause){
+            pauseAnchor = referenceSeries.getData().size();
         }
     }
 
@@ -73,10 +76,5 @@ public class Signal {
         series.getData().clear();
         referenceSeries.getData().clear();
         scrollOffset.set(0);
-        zoom.set(150);
-    }
-
-    public void addDataListener(ListChangeListener<String> dataListener, ObservableList<String> data){
-        data.addListener(dataListener);
     }
 }
