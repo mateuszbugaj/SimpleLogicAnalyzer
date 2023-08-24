@@ -43,12 +43,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class SimpleLogicAnalyzer extends Application {
     public static ObservableList<String> rawProbeData;
-    public static ObservableList<String> rawLogData;
 
     public static Scene scene;
     boolean collectingData = false;
-    public SerialPort probeSerial;
-    public ArrayList<SerialPort> logSerial = new ArrayList<>();
+    public static SerialPort probeSerial;
+    public static ArrayList<SerialPort> logSerial = new ArrayList<>();
 
     @Override
     public void start(Stage stage) throws IOException {
@@ -140,34 +139,14 @@ public class SimpleLogicAnalyzer extends Application {
 
                         if(collectingData){
                             Signal signal = signals.get(i);
-                            signal.series.getData().add(new XYChart.Data<>(
-                                    signal.series.getData().size(),
-                                    Integer.parseInt(dataSplit[i])
-                            ));
-                        }
-                    }
-                });
-            }
-        });
-
-        rawLogData = FXCollections.observableArrayList();
-        rawLogData.addListener(new ListChangeListener<String>() {
-            double y = 0.9;
-            @Override
-            public void onChanged(Change<? extends String> change) {
-                change.next();
-
-                String newData = change.getAddedSubList().get(0);
-                Platform.runLater(() -> {
-                    if(collectingData){
-                        Optional<Signal> signal = signals.stream().filter(s -> s.name.equals("Log Panel")).findAny();
-                        if(signal.isPresent()){
-                            var data = new XYChart.Data<Number, Number>(signals.get(0).series.getData().size(), y);
-                            data.setNode(createDataNode(data.YValueProperty(), newData));
-                            signal.get().series.getData().add(data);
-
-                            y += -0.1;
-                            if(y < 0.2) y = 0.9;
+                            try{
+                                signal.series.getData().add(new XYChart.Data<>(
+                                        signal.series.getData().size(),
+                                        Integer.parseInt(dataSplit[i])
+                                ));
+                            } catch (NumberFormatException e){
+                                break;
+                            }
                         }
                     }
                 });
@@ -190,7 +169,32 @@ public class SimpleLogicAnalyzer extends Application {
                 }
 
                 if(serial.getProductID() == configData.getUsbUartProductID()){
-                    serial.addDataListener(new SerialPortDataListenerImpl(rawLogData));
+                    ObservableList<String> observableList = FXCollections.observableArrayList();
+                    serial.addDataListener(new SerialPortDataListenerImpl(observableList));
+
+                    observableList.addListener(new ListChangeListener<String>() {
+                        public static double y = 0.9;
+                        @Override
+                        public void onChanged(Change<? extends String> change) {
+                            change.next();
+
+                            String newData = change.getAddedSubList().get(0);
+                            Platform.runLater(() -> {
+                                if(collectingData){
+                                    Optional<Signal> signal = signals.stream().filter(s -> s.name.equals("Log Panel")).findAny();
+                                    if(signal.isPresent()){
+                                        var data = new XYChart.Data<Number, Number>(signals.get(0).series.getData().size(), y);
+                                        data.setNode(createDataNode(data.YValueProperty(), newData, serial));
+                                        signal.get().series.getData().add(data);
+
+                                        y += -0.1;
+                                        if(y < 0.2) y = 0.9;
+                                    }
+                                }
+                            });
+                        }
+                    });
+
                     logSerial.add(serial);
                 }
             }
@@ -256,7 +260,7 @@ public class SimpleLogicAnalyzer extends Application {
         chart.setPadding(new Insets(0, 0, 0, 0));
     }
 
-    private static Node createDataNode(ObjectExpression<Number> value, String labelText) {
+    private static Node createDataNode(ObjectExpression<Number> value, String labelText, SerialPort port) {
         var label = new Label(labelText);
 
         var pane = new Pane(label);
@@ -264,8 +268,11 @@ public class SimpleLogicAnalyzer extends Application {
         pane.setShape(circle);
         pane.setScaleShape(false);
 
-        // Set background to red
-        pane.setStyle("-fx-background-color: blue;");
+        if(port == logSerial.get(0)) {
+            pane.setStyle("-fx-background-color: purple;");
+        } else if(port == logSerial.get(1)) {
+            pane.setStyle("-fx-background-color: green;");
+        }
 
         label.setTextAlignment(TextAlignment.CENTER);
         label.setTranslateY(5);
