@@ -3,14 +3,18 @@ package com.simplelogicanalyzer;
 import com.fazecast.jSerialComm.SerialPort;
 import com.fazecast.jSerialComm.SerialPortDataListener;
 import com.fazecast.jSerialComm.SerialPortEvent;
+import javafx.application.Platform;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.ObservableList;
 
 public class SerialPortDataListenerImpl implements SerialPortDataListener {
     private String buffer = "";
     public String receivedMessage = "";
     public ObservableList<String> rawDataList;
-    public SerialPortDataListenerImpl(ObservableList<String> rawDataList) {
+    public SimpleBooleanProperty collectingData;
+    public SerialPortDataListenerImpl(ObservableList<String> rawDataList, SimpleBooleanProperty collectingData) {
         this.rawDataList = rawDataList;
+        this.collectingData = collectingData;
     }
 
     @Override
@@ -38,7 +42,12 @@ public class SerialPortDataListenerImpl implements SerialPortDataListener {
             String[] messageSplit = receivedMessage.split("\r");
             for(int i = 0; i < messageSplit.length; i++){
                 if(i < fullMessageCount){
-                    rawDataList.add(messageSplit[i].trim());
+                    int finalI = i;
+                    Platform.runLater(() -> {
+                        if(collectingData.get()){
+                            rawDataList.add(0, messageSplit[finalI].trim());
+                        }
+                    });
                 } else {
                     buffer = buffer.concat(messageSplit[i]);
                 }

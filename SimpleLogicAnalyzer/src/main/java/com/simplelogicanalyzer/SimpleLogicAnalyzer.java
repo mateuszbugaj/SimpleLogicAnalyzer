@@ -7,11 +7,13 @@ import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.binding.ObjectExpression;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
 import javafx.event.Event;
 import javafx.event.EventHandler;
 import javafx.event.EventType;
@@ -42,12 +44,15 @@ import com.fazecast.jSerialComm.SerialPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class SimpleLogicAnalyzer extends Application {
-    public static ObservableList<String> rawProbeData;
+    public ObservableList<String> rawProbeData;
+    public ArrayList<ObservableList<String>> rawLogData = new ArrayList<>();
 
     public static Scene scene;
-    boolean collectingData = false;
+    SimpleBooleanProperty collectingData = new SimpleBooleanProperty(false);
     public static SerialPort probeSerial;
     public static ArrayList<SerialPort> logSerial = new ArrayList<>();
+    SimpleBooleanProperty showingLogs = new SimpleBooleanProperty();
+    ListView<String> logsListView = new ListView<>();
 
     @Override
     public void start(Stage stage) throws IOException {
@@ -55,9 +60,7 @@ public class SimpleLogicAnalyzer extends Application {
         InputStream propertiesInputStream = JsonParser.class.getClassLoader().getResourceAsStream("analyzer-properties.json");
         JsonData configData = mapper.readValue(propertiesInputStream, JsonData.class);
 
-        BorderPane layout = new BorderPane();
-        ToolBar toolBar = new ToolBar();
-        layout.setTop(toolBar);
+        BorderPane mainLayout = new BorderPane();
 
         ScrollPane scrollPane = new ScrollPane();
         scrollPane.maxWidth(Double.MAX_VALUE);
@@ -71,7 +74,15 @@ public class SimpleLogicAnalyzer extends Application {
             }
         });
 
-        layout.setCenter(scrollPane);
+        BorderPane centerLayout = new BorderPane();
+        centerLayout.setCenter(scrollPane);
+        mainLayout.setCenter(centerLayout);
+
+        // Create log list view
+        logsListView.visibleProperty().bind(showingLogs);
+        logsListView.managedProperty().bind(showingLogs);
+        showingLogs.set(false);
+        mainLayout.setRight(logsListView);
 
         VBox chartVBox = new VBox();
         scrollPane.setContent(chartVBox);
@@ -80,7 +91,17 @@ public class SimpleLogicAnalyzer extends Application {
         Button startButton = new Button("START");
         Button pauseButton = new Button("PAUSE");
         Button clearButton = new Button("CLEAR");
-        toolBar.getItems().addAll(startButton, pauseButton, clearButton);
+        BorderPane toolbarLayout = new BorderPane();
+        HBox toolbarLeftHBox = new HBox(startButton, pauseButton, clearButton);
+        HBox toolbarRightHBox = new HBox();
+        toolbarRightHBox.setSpacing(10);
+        toolbarRightHBox.setPadding(new Insets(5));
+        toolbarLeftHBox.setSpacing(10);
+        toolbarLeftHBox.setPadding(new Insets(5));
+        toolbarLayout.setRight(toolbarRightHBox);
+        toolbarLayout.setLeft(toolbarLeftHBox);
+
+        mainLayout.setTop(toolbarLayout);
 
         ArrayList<Signal> signals = new ArrayList<>();
         for(int i = 0; i < configData.getSignals().size(); i++){
@@ -96,7 +117,7 @@ public class SimpleLogicAnalyzer extends Application {
             LineChart<Number,Number> lineChart = new LineChart<>(xAxis, yAxis, FXCollections.observableArrayList(series));
             configureChart(lineChart, xAxis, yAxis);
             lineChart.setCreateSymbols(false);
-            lineChart.prefWidthProperty().bind(layout.widthProperty());
+            lineChart.prefWidthProperty().bind(mainLayout.widthProperty());
             lineChart.setPrefHeight(50);
 
             if(i%2==0){
@@ -121,9 +142,9 @@ public class SimpleLogicAnalyzer extends Application {
 
         logPanel.setMaxHeight(300);
         logPanel.setPrefHeight(300);
-        logPanel.prefWidthProperty().bind(layout.widthProperty());
+        logPanel.prefWidthProperty().bind(mainLayout.widthProperty());
         signals.add(new Signal("Log Panel", logPanel, series, xAxis, signals.get(0).series));
-        layout.setBottom(logPanel);
+        centerLayout.setBottom(logPanel);
 
         rawProbeData = FXCollections.observableArrayList();
         rawProbeData.addListener(new ListChangeListener<String>() {
@@ -131,13 +152,15 @@ public class SimpleLogicAnalyzer extends Application {
             public void onChanged(Change<? extends String> change) {
                 change.next();
 
+                if(change.getAddedSubList().isEmpty()) return;
+
                 String newData = change.getAddedSubList().get(0);
                 String[] dataSplit = newData.split(" ");
                 Platform.runLater(() -> {
                     for(int i = 0; i < dataSplit.length; i++){
                         if(i > configData.getSignals().size()) break;
 
-                        if(collectingData){
+                        if(collectingData.get()){
                             Signal signal = signals.get(i);
                             try{
                                 signal.series.getData().add(new XYChart.Data<>(
@@ -164,13 +187,14 @@ public class SimpleLogicAnalyzer extends Application {
                 serial.getInputStream().skip(serial.bytesAvailable());
 
                 if(serial.getProductID() == configData.getLogicProbeProductID()){
-                    serial.addDataListener(new SerialPortDataListenerImpl(rawProbeData));
+                    serial.addDataListener(new SerialPortDataListenerImpl(rawProbeData, collectingData));
                     probeSerial = serial;
                 }
 
                 if(serial.getProductID() == configData.getUsbUartProductID()){
                     ObservableList<String> observableList = FXCollections.observableArrayList();
-                    serial.addDataListener(new SerialPortDataListenerImpl(observableList));
+                    rawLogData.add(observableList);
+                    serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
 
                     observableList.addListener(new ListChangeListener<String>() {
                         public static double y = 0.9;
@@ -178,9 +202,11 @@ public class SimpleLogicAnalyzer extends Application {
                         public void onChanged(Change<? extends String> change) {
                             change.next();
 
+                            if(change.getAddedSubList().isEmpty()) return;
+
                             String newData = change.getAddedSubList().get(0);
                             Platform.runLater(() -> {
-                                if(collectingData){
+                                if(collectingData.get()){
                                     Optional<Signal> signal = signals.stream().filter(s -> s.name.equals("Log Panel")).findAny();
                                     if(signal.isPresent()){
                                         var data = new XYChart.Data<Number, Number>(signals.get(0).series.getData().size(), y);
@@ -196,18 +222,40 @@ public class SimpleLogicAnalyzer extends Application {
                     });
 
                     logSerial.add(serial);
+
+                    Button usartButton = new Button(serial.getSystemPortName());
+                    usartButton.setOnAction(new EventHandler<ActionEvent>() {
+                        @Override
+                        public void handle(ActionEvent actionEvent) {
+                            Platform.runLater(() -> {
+                                if(showingLogs.get()){
+                                    if(logsListView.getItems().equals(observableList)){
+                                        usartButton.setBorder(null);
+                                        showingLogs.set(false);
+                                    } else {
+                                        logsListView.setItems(observableList);
+                                    }
+                                } else {
+                                    showingLogs.set(true);
+                                    logsListView.setItems(observableList);
+                                }
+                            });
+                        }
+                    });
+
+                    toolbarRightHBox.getChildren().add(usartButton);
                 }
             }
         }
 
         startButton.setOnAction(event -> {
             try {
-                if (collectingData) {
-                    collectingData = false;
+                if (collectingData.get()) {
+                    collectingData.set(false);
                     startButton.setText("START");
                     probeSerial.getOutputStream().write("stop".getBytes());
                 } else {
-                    collectingData = true;
+                    collectingData.set(true);
                     startButton.setText("STOP");
                     probeSerial.getOutputStream().write("start".getBytes());
                 }
@@ -228,9 +276,11 @@ public class SimpleLogicAnalyzer extends Application {
 
         clearButton.setOnAction(actionEvent -> {
             signals.forEach(Signal::clear);
+            rawProbeData.clear();
+            rawLogData.forEach(List::clear);
         });
 
-        scene  = new Scene(layout,800,600);
+        scene  = new Scene(mainLayout,800,600);
         stage.setScene(scene);
         stage.setFullScreen(true);
         stage.show();
