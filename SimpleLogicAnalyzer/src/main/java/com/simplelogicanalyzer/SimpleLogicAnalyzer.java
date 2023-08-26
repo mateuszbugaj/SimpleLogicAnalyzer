@@ -44,15 +44,12 @@ import com.fazecast.jSerialComm.SerialPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class SimpleLogicAnalyzer extends Application {
-    public ObservableList<String> rawProbeData;
-    public ArrayList<ObservableList<String>> rawLogData = new ArrayList<>();
 
     public static Scene scene;
     SimpleBooleanProperty collectingData = new SimpleBooleanProperty(false);
     public static SerialPort probeSerial;
     public static ArrayList<SerialPort> logSerial = new ArrayList<>();
-    SimpleBooleanProperty showingLogs = new SimpleBooleanProperty();
-    ListView<String> logsListView = new ListView<>();
+    SimpleBooleanProperty showingLogs = new SimpleBooleanProperty(false);
 
     @Override
     public void start(Stage stage) throws IOException {
@@ -60,122 +57,96 @@ public class SimpleLogicAnalyzer extends Application {
         InputStream propertiesInputStream = JsonParser.class.getClassLoader().getResourceAsStream("analyzer-properties.json");
         JsonData configData = mapper.readValue(propertiesInputStream, JsonData.class);
 
-        BorderPane mainLayout = new BorderPane();
-
-        ScrollPane scrollPane = new ScrollPane();
-        scrollPane.maxWidth(Double.MAX_VALUE);
-        scrollPane.prefWidth(Double.MAX_VALUE);
-        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        BorderPane mainLayout = new BorderPane(); // Positions toolbar at the top, center layout at center and logsListView at the right
+        BorderPane centerLayout = new BorderPane(); // Positions signal charts scroll pane at center and 
+        mainLayout.setCenter(centerLayout);
+        
+        ScrollPane signalChartsScrollPane = new ScrollPane();
+        signalChartsScrollPane.maxWidth(Double.MAX_VALUE);
+        signalChartsScrollPane.prefWidth(Double.MAX_VALUE);
+        signalChartsScrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
 
         // Disable scrolling on the scroll pane
-        scrollPane.addEventFilter(ScrollEvent.SCROLL, event -> {
+        signalChartsScrollPane.addEventFilter(ScrollEvent.SCROLL, event -> {
+            if(event.getDeltaY() != 0 || event.getDeltaX() != 0) {
+                event.consume();
+            }
+        });
+        
+        centerLayout.setCenter(signalChartsScrollPane);
+
+        // Create log list view
+        ListView<String> logsListView = new ListView<>();
+        logsListView.visibleProperty().bind(showingLogs);
+        logsListView.managedProperty().bind(showingLogs);
+
+        logsListView.addEventFilter(ScrollEvent.SCROLL, event -> {
             if(event.getDeltaY() != 0 || event.getDeltaX() != 0) {
                 event.consume();
             }
         });
 
-        BorderPane centerLayout = new BorderPane();
-        centerLayout.setCenter(scrollPane);
-        mainLayout.setCenter(centerLayout);
-
-        // Create log list view
-        logsListView.visibleProperty().bind(showingLogs);
-        logsListView.managedProperty().bind(showingLogs);
-        showingLogs.set(false);
         mainLayout.setRight(logsListView);
 
-        VBox chartVBox = new VBox();
-        scrollPane.setContent(chartVBox);
-        chartVBox.prefWidthProperty().bind(scrollPane.widthProperty());
-
-        Button startButton = new Button("START");
-        Button pauseButton = new Button("PAUSE");
-        Button clearButton = new Button("CLEAR");
-        BorderPane toolbarLayout = new BorderPane();
-        HBox toolbarLeftHBox = new HBox(startButton, pauseButton, clearButton);
-        HBox toolbarRightHBox = new HBox();
-        toolbarRightHBox.setSpacing(10);
-        toolbarRightHBox.setPadding(new Insets(5));
-        toolbarLeftHBox.setSpacing(10);
-        toolbarLeftHBox.setPadding(new Insets(5));
-        toolbarLayout.setRight(toolbarRightHBox);
-        toolbarLayout.setLeft(toolbarLeftHBox);
-
-        mainLayout.setTop(toolbarLayout);
+        // Create signal charts
+        VBox signalCHartsVBox = new VBox();
+        signalChartsScrollPane.setContent(signalCHartsVBox);
+        signalCHartsVBox.prefWidthProperty().bind(signalChartsScrollPane.widthProperty());
 
         ArrayList<Signal> signals = new ArrayList<>();
-        for(int i = 0; i < configData.getSignals().size(); i++){
-            String s = configData.getSignals().get(i);
-            XYChart.Series<Number, Number> series = new XYChart.Series<>();
+        for(int signalIndex = 0; signalIndex < configData.getSignals().size(); signalIndex++){
+            String signalName = configData.getSignals().get(signalIndex);
+            XYChart.Series<Number, Number> signalChartDataSeries = new XYChart.Series<>();
 
-            NumberAxis xAxis = new NumberAxis();
-            xAxis.setTickLabelsVisible(false);
-            xAxis.setOpacity(0);
-            NumberAxis yAxis = new NumberAxis();
-            yAxis.setLabel(s);
+            NumberAxis signalChartXAxis = new NumberAxis();
+            signalChartXAxis.setTickLabelsVisible(false);
+            signalChartXAxis.setOpacity(0);
+            NumberAxis signalChartYAxis = new NumberAxis();
+            signalChartYAxis.setLabel(signalName);
 
-            LineChart<Number,Number> lineChart = new LineChart<>(xAxis, yAxis, FXCollections.observableArrayList(series));
-            configureChart(lineChart, xAxis, yAxis);
-            lineChart.setCreateSymbols(false);
-            lineChart.prefWidthProperty().bind(mainLayout.widthProperty());
-            lineChart.setPrefHeight(50);
+            LineChart<Number,Number> signalChart = new LineChart<>(signalChartXAxis, signalChartYAxis, FXCollections.observableArrayList(signalChartDataSeries));
+            configureChart(signalChart, signalChartXAxis, signalChartYAxis);
+            signalChart.setCreateSymbols(false);
+            signalChart.prefWidthProperty().bind(mainLayout.widthProperty());
+            signalChart.setPrefHeight(50);
 
-            if(i%2==0){
-                series.getNode().setStyle("-fx-stroke:"+ "red" +";");
+            if(signalIndex%2==0){
+                signalChartDataSeries.getNode().setStyle("-fx-stroke:"+ "red" +";");
             } else {
-                series.getNode().setStyle("-fx-stroke:"+ "blue" +";");
+                signalChartDataSeries.getNode().setStyle("-fx-stroke:"+ "blue" +";");
             }
 
-            chartVBox.getChildren().add(lineChart);
-            signals.add(new Signal(s, lineChart, series, xAxis));
+            signalCHartsVBox.getChildren().add(signalChart);
+            signals.add(new Signal(signalName, signalChart, signalChartDataSeries, signalChartXAxis));
         }
 
         // Create log panel
-        NumberAxis xAxis = new NumberAxis();
-        XYChart.Series<Number, Number> series = new XYChart.Series<>();
+        NumberAxis logPanelXAxis = new NumberAxis();
+        XYChart.Series<Number, Number> logPanelDataSeries = new XYChart.Series<>();
 
-        NumberAxis yAxis = new NumberAxis();
-        yAxis.setLabel("Log data");
+        NumberAxis logPanelYAxis = new NumberAxis();
+        logPanelYAxis.setLabel("Log data");
 
-        ScatterChart<Number,Number> logPanel = new ScatterChart<>(xAxis, yAxis, FXCollections.observableArrayList(series));
-        configureChart(logPanel, xAxis, yAxis);
+        ScatterChart<Number,Number> logPanelChart = new ScatterChart<>(logPanelXAxis, logPanelYAxis, FXCollections.observableArrayList(logPanelDataSeries));
+        configureChart(logPanelChart, logPanelXAxis, logPanelYAxis);
+        logPanelChart.setMaxHeight(300);
+        logPanelChart.setPrefHeight(300);
+        logPanelChart.prefWidthProperty().bind(mainLayout.widthProperty());
+        signals.add(new Signal("Log Panel", logPanelChart, logPanelDataSeries, logPanelXAxis, signals.get(0).series));
+        centerLayout.setBottom(logPanelChart);
 
-        logPanel.setMaxHeight(300);
-        logPanel.setPrefHeight(300);
-        logPanel.prefWidthProperty().bind(mainLayout.widthProperty());
-        signals.add(new Signal("Log Panel", logPanel, series, xAxis, signals.get(0).series));
-        centerLayout.setBottom(logPanel);
+        // Configure data ports and raw data lists
+        ObservableList<String> rawProbeData = FXCollections.observableArrayList();
+        ArrayList<ObservableList<String>> rawLogData = new ArrayList<>();
 
-        rawProbeData = FXCollections.observableArrayList();
-        rawProbeData.addListener(new ListChangeListener<String>() {
-            @Override
-            public void onChanged(Change<? extends String> change) {
-                change.next();
+        BorderPane toolbarLayout = new BorderPane();
+        mainLayout.setTop(toolbarLayout);
 
-                if(change.getAddedSubList().isEmpty()) return;
-
-                String newData = change.getAddedSubList().get(0);
-                String[] dataSplit = newData.split(" ");
-                Platform.runLater(() -> {
-                    for(int i = 0; i < dataSplit.length; i++){
-                        if(i > configData.getSignals().size()) break;
-
-                        if(collectingData.get()){
-                            Signal signal = signals.get(i);
-                            try{
-                                signal.series.getData().add(new XYChart.Data<>(
-                                        signal.series.getData().size(),
-                                        Integer.parseInt(dataSplit[i])
-                                ));
-                            } catch (NumberFormatException e){
-                                break;
-                            }
-                        }
-                    }
-                });
-            }
-        });
-
+        HBox logPortsButtons = new HBox();
+        logPortsButtons.setSpacing(10);
+        logPortsButtons.setPadding(new Insets(5));
+        toolbarLayout.setRight(logPortsButtons);
+        
         System.out.println("Available ports:");
         for(SerialPort serial:SerialPort.getCommPorts()){
             System.out.println(serial.getSystemPortName() + ", " + serial.getDescriptivePortName() + ", " + serial.getProductID());
@@ -187,6 +158,7 @@ public class SimpleLogicAnalyzer extends Application {
                 serial.getInputStream().skip(serial.bytesAvailable());
 
                 if(serial.getProductID() == configData.getLogicProbeProductID()){
+                    rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
                     serial.addDataListener(new SerialPortDataListenerImpl(rawProbeData, collectingData));
                     probeSerial = serial;
                 }
@@ -195,32 +167,7 @@ public class SimpleLogicAnalyzer extends Application {
                     ObservableList<String> observableList = FXCollections.observableArrayList();
                     rawLogData.add(observableList);
                     serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
-
-                    observableList.addListener(new ListChangeListener<String>() {
-                        public static double y = 0.9;
-                        @Override
-                        public void onChanged(Change<? extends String> change) {
-                            change.next();
-
-                            if(change.getAddedSubList().isEmpty()) return;
-
-                            String newData = change.getAddedSubList().get(0);
-                            Platform.runLater(() -> {
-                                if(collectingData.get()){
-                                    Optional<Signal> signal = signals.stream().filter(s -> s.name.equals("Log Panel")).findAny();
-                                    if(signal.isPresent()){
-                                        var data = new XYChart.Data<Number, Number>(signals.get(0).series.getData().size(), y);
-                                        data.setNode(createDataNode(data.YValueProperty(), newData, serial));
-                                        signal.get().series.getData().add(data);
-
-                                        y += -0.1;
-                                        if(y < 0.2) y = 0.9;
-                                    }
-                                }
-                            });
-                        }
-                    });
-
+                    observableList.addListener(new LogDataListener(collectingData, signals));
                     logSerial.add(serial);
 
                     Button usartButton = new Button(serial.getSystemPortName());
@@ -243,11 +190,20 @@ public class SimpleLogicAnalyzer extends Application {
                         }
                     });
 
-                    toolbarRightHBox.getChildren().add(usartButton);
+                    logPortsButtons.getChildren().add(usartButton);
                 }
             }
         }
 
+        Button startButton = new Button("START");
+        Button pauseButton = new Button("PAUSE");
+        Button clearButton = new Button("CLEAR");
+
+        HBox toolbarLeftHBox = new HBox(startButton, pauseButton, clearButton);
+        toolbarLeftHBox.setSpacing(10);
+        toolbarLeftHBox.setPadding(new Insets(5));
+        toolbarLayout.setLeft(toolbarLeftHBox);
+        
         startButton.setOnAction(event -> {
             try {
                 if (collectingData.get()) {
@@ -296,7 +252,7 @@ public class SimpleLogicAnalyzer extends Application {
         });
     }
 
-    private static void configureChart(Chart chart, NumberAxis xAxis, NumberAxis yAxis){
+    private void configureChart(Chart chart, NumberAxis xAxis, NumberAxis yAxis){
         xAxis.setAutoRanging(false);
 
         yAxis.setAutoRanging(false);
@@ -308,27 +264,6 @@ public class SimpleLogicAnalyzer extends Application {
         chart.setLegendVisible(false);
         chart.setFocusTraversable(true);
         chart.setPadding(new Insets(0, 0, 0, 0));
-    }
-
-    private static Node createDataNode(ObjectExpression<Number> value, String labelText, SerialPort port) {
-        var label = new Label(labelText);
-
-        var pane = new Pane(label);
-        Circle circle = new Circle(4.0);
-        pane.setShape(circle);
-        pane.setScaleShape(false);
-
-        if(port == logSerial.get(0)) {
-            pane.setStyle("-fx-background-color: purple;");
-        } else if(port == logSerial.get(1)) {
-            pane.setStyle("-fx-background-color: green;");
-        }
-
-        label.setTextAlignment(TextAlignment.CENTER);
-        label.setTranslateY(5);
-        label.translateXProperty().bind(label.widthProperty().divide(2).add(20));
-
-        return pane;
     }
 
     public static void main(String[] args) {
