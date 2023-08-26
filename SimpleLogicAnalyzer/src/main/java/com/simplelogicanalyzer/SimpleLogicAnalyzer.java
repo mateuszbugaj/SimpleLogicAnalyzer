@@ -4,52 +4,37 @@ import com.fasterxml.jackson.core.JsonParser;
 
 import javafx.application.Application;
 import javafx.application.Platform;
-import javafx.beans.InvalidationListener;
-import javafx.beans.Observable;
-import javafx.beans.binding.ObjectExpression;
 import javafx.beans.property.SimpleBooleanProperty;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
+import javafx.beans.property.SimpleLongProperty;
 import javafx.collections.FXCollections;
-import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
-import javafx.event.Event;
 import javafx.event.EventHandler;
-import javafx.event.EventType;
 import javafx.geometry.Insets;
-import javafx.geometry.Orientation;
-import javafx.geometry.Pos;
-import javafx.geometry.Side;
-import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.chart.*;
 import javafx.scene.control.*;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.paint.Paint;
-import javafx.scene.shape.Circle;
-import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fazecast.jSerialComm.SerialPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import javafx.util.Callback;
 
 public class SimpleLogicAnalyzer extends Application {
 
     public static Scene scene;
     SimpleBooleanProperty collectingData = new SimpleBooleanProperty(false);
-    public static SerialPort probeSerial;
-    public static ArrayList<SerialPort> logSerial = new ArrayList<>();
+    SerialPort probeSerial;
+    ArrayList<SerialPort> logSerial = new ArrayList<>();
     SimpleBooleanProperty showingLogs = new SimpleBooleanProperty(false);
+    SimpleLongProperty timestamp = new SimpleLongProperty();
 
     @Override
     public void start(Stage stage) throws IOException {
@@ -76,13 +61,34 @@ public class SimpleLogicAnalyzer extends Application {
         centerLayout.setCenter(signalChartsScrollPane);
 
         // Create log list view
-        ListView<String> logsListView = new ListView<>();
+        ListView<DataPoint> logsListView = new ListView<>();
+        logsListView.setPrefWidth(400);
         logsListView.visibleProperty().bind(showingLogs);
         logsListView.managedProperty().bind(showingLogs);
 
         logsListView.addEventFilter(ScrollEvent.SCROLL, event -> {
             if(event.getDeltaY() != 0 || event.getDeltaX() != 0) {
                 event.consume();
+            }
+        });
+
+        logsListView.setCellFactory(new Callback<>() {
+            @Override
+            public ListCell<DataPoint> call(ListView<DataPoint> dataPointListView) {
+                return new ListCell<>() {
+                    @Override
+                    protected void updateItem(DataPoint dataPoint, boolean empty) {
+                        super.updateItem(dataPoint, empty);
+                        if (dataPoint != null && !empty) {
+                            SimpleDateFormat sdf = new SimpleDateFormat("[ss.SSS] ");
+                            long timeDelta = dataPoint.timestamp - timestamp.get();
+                            String formattedDate = sdf.format(new Date(timeDelta));
+                            setText(formattedDate + dataPoint.content);
+                        } else {
+                            setText(null);
+                        }
+                    }
+                };
             }
         });
 
@@ -121,12 +127,14 @@ public class SimpleLogicAnalyzer extends Application {
         }
 
         // Create log panel
-        NumberAxis logPanelXAxis = new NumberAxis();
-        XYChart.Series<Number, Number> logPanelDataSeries = new XYChart.Series<>();
+        ObservableList<DataPoint> rawProbeData = FXCollections.observableArrayList();
+        ArrayList<ObservableList<DataPoint>> rawLogData = new ArrayList<>();
 
+        NumberAxis logPanelXAxis = new NumberAxis();
         NumberAxis logPanelYAxis = new NumberAxis();
         logPanelYAxis.setLabel("Log data");
 
+        XYChart.Series<Number, Number> logPanelDataSeries = new XYChart.Series<>();
         ScatterChart<Number,Number> logPanelChart = new ScatterChart<>(logPanelXAxis, logPanelYAxis, FXCollections.observableArrayList(logPanelDataSeries));
         configureChart(logPanelChart, logPanelXAxis, logPanelYAxis);
         logPanelChart.setMaxHeight(300);
@@ -135,10 +143,7 @@ public class SimpleLogicAnalyzer extends Application {
         signals.add(new Signal("Log Panel", logPanelChart, logPanelDataSeries, logPanelXAxis, signals.get(0).series));
         centerLayout.setBottom(logPanelChart);
 
-        // Configure data ports and raw data lists
-        ObservableList<String> rawProbeData = FXCollections.observableArrayList();
-        ArrayList<ObservableList<String>> rawLogData = new ArrayList<>();
-
+        // Configure data ports
         BorderPane toolbarLayout = new BorderPane();
         mainLayout.setTop(toolbarLayout);
 
@@ -164,7 +169,7 @@ public class SimpleLogicAnalyzer extends Application {
                 }
 
                 if(serial.getProductID() == configData.getUsbUartProductID()){
-                    ObservableList<String> observableList = FXCollections.observableArrayList();
+                    ObservableList<DataPoint> observableList = FXCollections.observableArrayList();
                     rawLogData.add(observableList);
                     serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
                     observableList.addListener(new LogDataListener(collectingData, signals));
@@ -212,6 +217,7 @@ public class SimpleLogicAnalyzer extends Application {
                     probeSerial.getOutputStream().write("stop".getBytes());
                 } else {
                     collectingData.set(true);
+                    timestamp.set(System.currentTimeMillis());
                     startButton.setText("STOP");
                     probeSerial.getOutputStream().write("start".getBytes());
                 }
@@ -231,6 +237,7 @@ public class SimpleLogicAnalyzer extends Application {
         });
 
         clearButton.setOnAction(actionEvent -> {
+            timestamp.set(System.currentTimeMillis());
             signals.forEach(Signal::clear);
             rawProbeData.clear();
             rawLogData.forEach(List::clear);

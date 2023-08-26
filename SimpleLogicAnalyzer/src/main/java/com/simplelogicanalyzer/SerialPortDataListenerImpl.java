@@ -10,9 +10,9 @@ import javafx.collections.ObservableList;
 public class SerialPortDataListenerImpl implements SerialPortDataListener {
     private String buffer = "";
     public String receivedMessage = "";
-    public ObservableList<String> rawDataList;
+    public ObservableList<DataPoint> rawDataList;
     public SimpleBooleanProperty collectingData;
-    public SerialPortDataListenerImpl(ObservableList<String> rawDataList, SimpleBooleanProperty collectingData) {
+    public SerialPortDataListenerImpl(ObservableList<DataPoint> rawDataList, SimpleBooleanProperty collectingData) {
         this.rawDataList = rawDataList;
         this.collectingData = collectingData;
     }
@@ -45,7 +45,8 @@ public class SerialPortDataListenerImpl implements SerialPortDataListener {
                     int finalI = i;
                     Platform.runLater(() -> {
                         if(collectingData.get()){
-                            rawDataList.add(0, messageSplit[finalI].trim());
+                            String content = messageSplit[finalI].trim();
+                            rawDataList.add(0, new DataPoint(content, System.currentTimeMillis()));
                         }
                     });
                 } else {

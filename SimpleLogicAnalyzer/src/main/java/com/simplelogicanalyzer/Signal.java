@@ -11,6 +11,10 @@ import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
 import javafx.scene.paint.Paint;
+import javafx.util.StringConverter;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 public class Signal {
     public String name;

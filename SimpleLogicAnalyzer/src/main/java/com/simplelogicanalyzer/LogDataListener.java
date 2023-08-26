@@ -1,8 +1,6 @@
 package com.simplelogicanalyzer;
 
-import com.fazecast.jSerialComm.SerialPort;
 import javafx.application.Platform;
-import javafx.beans.binding.ObjectExpression;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.ListChangeListener;
 import javafx.scene.Node;
@@ -15,7 +13,7 @@ import javafx.scene.text.TextAlignment;
 import java.util.ArrayList;
 import java.util.Optional;
 
-public class LogDataListener implements ListChangeListener<String> {
+public class LogDataListener implements ListChangeListener<DataPoint> {
     private final SimpleBooleanProperty collectingData;
     private final ArrayList<Signal> signals;
     private static int id = 0; // used for color-coding
@@ -31,12 +29,13 @@ public class LogDataListener implements ListChangeListener<String> {
     }
 
     @Override
-    public void onChanged(Change<? extends String> change) {
+    public void onChanged(Change<? extends DataPoint> change) {
         change.next();
 
         if(change.getAddedSubList().isEmpty()) return;
 
-        String newData = change.getAddedSubList().get(0);
+        DataPoint dataPoint = change.getAddedSubList().get(0);
+        String newData = dataPoint.content;
         Platform.runLater(() -> {
             if(collectingData.get()){
                 Optional<Signal> signal = signals.stream().filter(s -> s.name.equals("Log Panel")).findAny();
@@ -53,9 +52,8 @@ public class LogDataListener implements ListChangeListener<String> {
     }
 
     private Node createDataNode(String labelText) {
-        var label = new Label(labelText);
-
-        var pane = new Pane(label);
+        Label label = new Label(labelText);
+        Pane pane = new Pane(label);
         Circle circle = new Circle(4.0);
         pane.setShape(circle);
         pane.setScaleShape(false);

@@ -7,7 +7,7 @@ import javafx.scene.chart.XYChart;
 
 import java.util.ArrayList;
 
-public class ProbeDataListener implements ListChangeListener<String> {
+public class ProbeDataListener implements ListChangeListener<DataPoint> {
     private final JsonData configData;
     private final SimpleBooleanProperty collectingData;
     private final ArrayList<Signal> signals;
@@ -18,12 +18,12 @@ public class ProbeDataListener implements ListChangeListener<String> {
     }
 
     @Override
-    public void onChanged(Change change) {
+    public void onChanged(Change<? extends DataPoint> change) {
         change.next();
 
         if(change.getAddedSubList().isEmpty()) return;
 
-        String newData = (String) change.getAddedSubList().get(0);
+        String newData = change.getAddedSubList().get(0).content;
         String[] dataSplit = newData.split(" ");
         Platform.runLater(() -> {
             for(int i = 0; i < dataSplit.length; i++){
