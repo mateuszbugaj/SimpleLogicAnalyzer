@@ -43,6 +43,7 @@ public class LogDataListener implements ListChangeListener<DataPoint> {
                     var data = new XYChart.Data<Number, Number>(signals.get(0).series.getData().size(), y);
                     data.setNode(createDataNode(newData));
                     signal.get().series.getData().add(data);
+                    dataPoint.chartXPosition = signals.get(0).series.getData().size();
 
                     y += -0.1;
                     if(y < 0.2) y = 0.9;

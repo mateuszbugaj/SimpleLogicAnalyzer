@@ -6,11 +6,14 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleLongProperty;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
 import javafx.geometry.Insets;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.chart.*;
 import javafx.scene.control.*;
@@ -43,7 +46,7 @@ public class SimpleLogicAnalyzer extends Application {
         JsonData configData = mapper.readValue(propertiesInputStream, JsonData.class);
 
         BorderPane mainLayout = new BorderPane(); // Positions toolbar at the top, center layout at center and logsListView at the right
-        BorderPane centerLayout = new BorderPane(); // Positions signal charts scroll pane at center and 
+        BorderPane centerLayout = new BorderPane(); // Positions signal charts scroll pane at center
         mainLayout.setCenter(centerLayout);
         
         ScrollPane signalChartsScrollPane = new ScrollPane();
@@ -142,6 +145,35 @@ public class SimpleLogicAnalyzer extends Application {
         logPanelChart.prefWidthProperty().bind(mainLayout.widthProperty());
         signals.add(new Signal("Log Panel", logPanelChart, logPanelDataSeries, logPanelXAxis, signals.get(0).series));
         centerLayout.setBottom(logPanelChart);
+
+        logsListView.setOnMouseClicked(event -> {
+            DataPoint selectedDataPoint = logsListView.getSelectionModel().getSelectedItem();
+            if (selectedDataPoint != null) {
+                for (XYChart.Data<Number, Number> data : logPanelChart.getData().get(0).getData()) {
+                    Node node = data.getNode();
+                    if (node instanceof Pane) {
+                        Label label = (Label) ((Pane) node).getChildren().get(0);
+                        label.setStyle("-fx-text-fill: black;");
+
+                        if (data.getXValue().equals(selectedDataPoint.chartXPosition) && label.getText().equals(selectedDataPoint.content)) {
+                            label.setStyle("-fx-text-fill: red;");
+
+                            // Add the vertical line to each signal chart
+                            for (Signal signal : signals) {
+                                LineChart<Number, Number> signalChart;
+                                try {
+                                    signalChart = (LineChart<Number, Number>) signal.lineChart;
+                                    addVerticalLineToChart(signalChart, selectedDataPoint.chartXPosition);
+                                } catch (ClassCastException e){}
+
+                            }
+
+                            addVerticalLineToChart(logPanelChart, selectedDataPoint.chartXPosition);
+                        }
+                    }
+                }
+            }
+        });
 
         // Configure data ports
         BorderPane toolbarLayout = new BorderPane();
@@ -243,6 +275,23 @@ public class SimpleLogicAnalyzer extends Application {
             rawLogData.forEach(List::clear);
         });
 
+        // Create selectable list of signals to show
+        HBox signalCheckBoxes = new HBox();
+        signalCheckBoxes.setSpacing(10);
+        signalCheckBoxes.setPadding(new Insets(8, 10, 0, 10));
+
+        for (Signal signal : signals) {
+            CheckBox signalCheckBox = new CheckBox(signal.name);
+            signalCheckBox.setSelected(true); // default all signals to be selected
+            signalCheckBox.selectedProperty().addListener((observable, oldValue, newValue) -> {
+                signal.lineChart.visibleProperty().bind(signalCheckBox.selectedProperty());
+                signal.lineChart.managedProperty().bind(signalCheckBox.selectedProperty());
+            });
+            signalCheckBoxes.getChildren().add(signalCheckBox);
+        }
+
+        toolbarLayout.setCenter(signalCheckBoxes);
+
         scene  = new Scene(mainLayout,800,600);
         stage.setScene(scene);
         stage.setFullScreen(true);
@@ -272,6 +321,38 @@ public class SimpleLogicAnalyzer extends Application {
         chart.setFocusTraversable(true);
         chart.setPadding(new Insets(0, 0, 0, 0));
     }
+
+    private void addVerticalLineToChart(XYChart<Number, Number> chart, double xValue) {
+        XYChart.Data<Number, Number> start = new XYChart.Data<>(xValue, -1);
+        XYChart.Data<Number, Number> end = new XYChart.Data<>(xValue, 2);
+
+        XYChart.Series<Number, Number> verticalLineSeries = new XYChart.Series<>();
+        verticalLineSeries.getData().addAll(start, end);
+
+        // Remove the previously added series (if it exists)
+        List<XYChart.Series<Number, Number>> toRemove = new ArrayList<>();
+        for (XYChart.Series<Number, Number> series : chart.getData()) {
+            if ("verticalLine".equals(series.getName())) {
+                toRemove.add(series);
+            }
+        }
+        chart.getData().removeAll(toRemove);
+
+        verticalLineSeries.setName("verticalLine");
+
+        verticalLineSeries.nodeProperty().addListener(new ChangeListener<Node>() {
+            @Override
+            public void changed(ObservableValue<? extends Node> observable, Node oldValue, Node newValue) {
+                if (newValue != null) {
+                    newValue.setStyle("-fx-stroke:"+ "black" +";");
+                    verticalLineSeries.nodeProperty().removeListener(this);  // remove the listener to avoid repeated calls
+                }
+            }
+        });
+
+        chart.getData().add(verticalLineSeries);
+    }
+
 
     public static void main(String[] args) {
         launch(args);
