@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.WatchEvent;
@@ -33,6 +34,7 @@ import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.stream.Stream;
 
 import com.fazecast.jSerialComm.SerialPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,7 +53,7 @@ public class SimpleLogicAnalyzer extends Application {
     @Override
     public void start(Stage stage) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
-        InputStream propertiesInputStream = JsonParser.class.getClassLoader().getResourceAsStream("analyzer-properties.json");
+        InputStream propertiesInputStream = JsonParser.class.getClassLoader().getResourceAsStream(getParameters().getRaw().get(0));
         JsonData configData = mapper.readValue(propertiesInputStream, JsonData.class);
 
         BorderPane mainLayout = new BorderPane(); // Positions toolbar at the top, center layout at center and logsListView at the right
@@ -193,121 +195,35 @@ public class SimpleLogicAnalyzer extends Application {
         logPortsButtons.setPadding(new Insets(5));
         toolbarLayout.setRight(logPortsButtons);
 
-        System.out.println(getParameters().getRaw());
+        if(configData.getLogicProbe().contains(".txt")){
+            // Read data from file
+            Path filePath = Paths.get(configData.getLogicProbe());
+            try (Stream<String> stream = Files.lines(filePath)) {
+                stream.forEach(newLine -> {
+                    String[] messageSplit = newLine.strip().split(" ");
 
-        if(getParameters().getRaw().size() > 0){
-            readingFromUSB = false;
-            Path filePath = Paths.get(getParameters().getRaw().get(0));
-            System.out.println("Reading from file: " + filePath);
-
-            WatchService service = FileSystems.getDefault().newWatchService();
-            filePath.getParent().register(service, java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
-            Thread thread = new Thread(() -> {
-                while(true){
-                    try {
-                        WatchKey key = service.take();
-                        for(WatchEvent<?> event : key.pollEvents()){
-                            if(filePath.getFileName().equals(event.context())){
-                                // File has changed, get the last line
-                                RandomAccessFile raf = new RandomAccessFile(filePath.toFile(), "r");
-                                long length = raf.length() - 1;
-                                StringBuilder sb = new StringBuilder();
-
-                                for (long pointer = length; pointer >= 0; pointer--) {
-                                    raf.seek(pointer);
-                                    char c = (char) raf.read();
-                                    if (c == '\n' && pointer < length) {
-                                        break;
-                                    }
-                                    sb.append(c);
-                                }
-
-                                String newLine = sb.reverse().toString().strip();
-                                String[] messageSplit = newLine.split(" ");
-
-                                Platform.runLater(() -> {
-                                    for(int i = 0; i < messageSplit.length; i++){
-                                        if(i > configData.getSignals().size()) break;
-                        
-                                        if(collectingData.get()){
-                                            Signal signal = signals.get(i);
-                                            try{
-                                                signal.series.getData().add(new XYChart.Data<>(
-                                                        signal.series.getData().size(),
-                                                        Integer.parseInt(messageSplit[i])
-                                                ));
-                                            } catch (NumberFormatException e){
-                                                break;
-                                            }
-                                        }
-                                    }
-                                });
+                    Platform.runLater(() -> {
+                        for(int i = 0; i < messageSplit.length; i++){
+                            if(i > configData.getSignals().size()) break;
+            
+                            Signal signal = signals.get(i);
+                            try{
+                                signal.series.getData().add(new XYChart.Data<>(
+                                        signal.series.getData().size(),
+                                        Integer.parseInt(messageSplit[i])
+                                ));
+                            } catch (NumberFormatException e){
+                                break;
                             }
                         }
-                        key.reset();
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } catch (FileNotFoundException e) {
-                        e.printStackTrace();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
-            thread.setDaemon(true);
-            thread.start();
-
-            rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
-
-        } else {
-            System.out.println("Available ports:");
-            for(SerialPort serial:SerialPort.getCommPorts()){
-                System.out.println(serial.getSystemPortName() + ", " + serial.getDescriptivePortName() + ", " + serial.getProductID());
-    
-                if(serial.getProductID() == configData.getLogicProbeProductID() || serial.getProductID() == configData.getUsbUartProductID()){
-                    serial.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
-                    serial.setBaudRate(9600);
-                    serial.openPort();
-                    serial.getInputStream().skip(serial.bytesAvailable());
-    
-                    if(serial.getProductID() == configData.getLogicProbeProductID()){
-                        rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
-                        serial.addDataListener(new SerialPortDataListenerImpl(rawProbeData, collectingData));
-                        probeSerial = serial;
-                    }
-    
-                    if(serial.getProductID() == configData.getUsbUartProductID()){
-                        ObservableList<DataPoint> observableList = FXCollections.observableArrayList();
-                        rawLogData.add(observableList);
-                        serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
-                        observableList.addListener(new LogDataListener(collectingData, signals));
-                        logSerial.add(serial);
-    
-                        Button usartButton = new Button(serial.getSystemPortName());
-                        usartButton.setOnAction(new EventHandler<ActionEvent>() {
-                            @Override
-                            public void handle(ActionEvent actionEvent) {
-                                Platform.runLater(() -> {
-                                    if(showingLogs.get()){
-                                        if(logsListView.getItems().equals(observableList)){
-                                            usartButton.setBorder(null);
-                                            showingLogs.set(false);
-                                        } else {
-                                            logsListView.setItems(observableList);
-                                        }
-                                    } else {
-                                        showingLogs.set(true);
-                                        logsListView.setItems(observableList);
-                                    }
-                                });
-                            }
-                        });
-    
-                        logPortsButtons.getChildren().add(usartButton);
-                    }
-                }
+                    });
+                });
             }
+
+            configureFileDataListeners(configData, rawProbeData, signals);
+        } else {
+            List<Button> usartButtons = configureSerialDataListeners(configData, rawProbeData, signals, rawLogData, logsListView);
+            logPortsButtons.getChildren().addAll(usartButtons);
         }
         
 
@@ -385,6 +301,130 @@ public class SimpleLogicAnalyzer extends Application {
                 signals.forEach(signal -> signal.scroll(event.getDeltaY()));
             }
         });
+    }
+
+    private void configureFileDataListeners(JsonData configData, ObservableList<DataPoint> rawProbeData, ArrayList<Signal> signals) throws IOException{
+        readingFromUSB = false;
+        Path filePath = Paths.get(configData.getLogicProbe());
+
+        WatchService service = FileSystems.getDefault().newWatchService();
+        filePath.getParent().register(service, java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
+        Thread thread = new Thread(() -> {
+            while(true){
+                try {
+                    WatchKey key = service.take();
+                    for(WatchEvent<?> event : key.pollEvents()){
+                        if(filePath.getFileName().equals(event.context())){
+                            // File has changed, get the last line
+                            RandomAccessFile raf = new RandomAccessFile(filePath.toFile(), "r");
+                            long length = raf.length() - 1;
+                            StringBuilder sb = new StringBuilder();
+
+                            for (long pointer = length; pointer >= 0; pointer--) {
+                                raf.seek(pointer);
+                                char c = (char) raf.read();
+                                if (c == '\n' && pointer < length) {
+                                    break;
+                                }
+                                sb.append(c);
+                            }
+
+                            String newLine = sb.reverse().toString().strip();
+                            String[] messageSplit = newLine.split(" ");
+
+                            Platform.runLater(() -> {
+                                for(int i = 0; i < messageSplit.length; i++){
+                                    if(i > configData.getSignals().size()) break;
+                    
+                                    if(collectingData.get()){
+                                        Signal signal = signals.get(i);
+                                        try{
+                                            signal.series.getData().add(new XYChart.Data<>(
+                                                    signal.series.getData().size(),
+                                                    Integer.parseInt(messageSplit[i])
+                                            ));
+                                        } catch (NumberFormatException e){
+                                            break;
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    key.reset();
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        thread.setDaemon(true);
+        thread.start();
+
+        rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
+    }
+
+    private List<Button> configureSerialDataListeners(JsonData configData, ObservableList<DataPoint> rawProbeData, ArrayList<Signal> signals, ArrayList<ObservableList<DataPoint>> rawLogData, ListView<DataPoint> logsListView) throws IOException {
+        System.out.println("Logic probe: " + configData.getLogicProbe());
+        System.out.println("Logging probe: " + configData.getLoggingProbe());
+        System.out.println("Available ports:");
+
+        List<Button> usartButtons = new ArrayList<>();
+        for(SerialPort serial:SerialPort.getCommPorts()){
+            System.out.println(serial.getSystemPortName() + ", " + serial.getDescriptivePortName() + ", " + serial.getProductID() + ", " + serial.getSystemPortPath());
+
+            if(serial.getSystemPortPath().equals(configData.getLogicProbe()) || configData.getLoggingProbe().contains(serial.getSystemPortPath())){
+                serial.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
+                serial.setBaudRate(9600);
+                serial.openPort();
+                serial.getInputStream().skip(serial.bytesAvailable());
+
+                if(serial.getSystemPortPath().equals(configData.getLogicProbe())){
+                    System.out.println("Logic probe found");
+                    rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
+                    serial.addDataListener(new SerialPortDataListenerImpl(rawProbeData, collectingData));
+                    probeSerial = serial;
+                    continue;
+                }
+
+                if(configData.getLoggingProbe().contains(serial.getSystemPortPath())){
+                    System.out.println("Logging probe found");
+                    ObservableList<DataPoint> observableList = FXCollections.observableArrayList();
+                    rawLogData.add(observableList);
+                    serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
+                    observableList.addListener(new LogDataListener(collectingData, signals));
+                    logSerial.add(serial);
+
+                    Button usartButton = new Button(serial.getSystemPortName());
+                    usartButton.setOnAction(new EventHandler<ActionEvent>() {
+                        @Override
+                        public void handle(ActionEvent actionEvent) {
+                            Platform.runLater(() -> {
+                                if(showingLogs.get()){
+                                    if(logsListView.getItems().equals(observableList)){
+                                        usartButton.setBorder(null);
+                                        showingLogs.set(false);
+                                    } else {
+                                        logsListView.setItems(observableList);
+                                    }
+                                } else {
+                                    showingLogs.set(true);
+                                    logsListView.setItems(observableList);
+                                }
+                            });
+                        }
+                    });
+                    usartButtons.add(usartButton);
+                    continue;
+                }
+            }
+        }
+
+        return usartButtons;
     }
 
     private void configureChart(Chart chart, NumberAxis xAxis, NumberAxis yAxis){

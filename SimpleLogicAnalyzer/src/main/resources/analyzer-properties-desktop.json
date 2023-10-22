@@ -1,0 +1,5 @@
+{
+  "logicProbe": "/home/mat/CrossCompiledI2C/output/logic_analyzer_snapshot.txt",
+  "loggingProbe": [],
+  "signals": ["SDA", "SCL", "Transmitter SDA", "Transmitter SCL", "Receiver SDA", "Receiver SCL"]
+}

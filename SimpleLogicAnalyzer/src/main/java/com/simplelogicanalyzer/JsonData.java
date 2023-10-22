@@ -4,24 +4,24 @@ import java.util.List;
 
 public class JsonData {
 
-    private Integer logicProbeProductID;
-    private Integer usbUartProductID;
+    private String logicProbe;
+    private List<String> loggingProbe;
     private List<String> signals;
 
-    public Integer getLogicProbeProductID() {
-        return logicProbeProductID;
+    public String getLogicProbe() {
+        return logicProbe;
     }
 
-    public void setLogicProbeProductID(Integer logicProbeProductID) {
-        this.logicProbeProductID = logicProbeProductID;
+    public void setLogicProbe(String logicProbe) {
+        this.logicProbe = logicProbe;
     }
 
-    public Integer getUsbUartProductID() {
-        return usbUartProductID;
+    public List<String> getLoggingProbe() {
+        return loggingProbe;
     }
 
-    public void setUsbUartProductID(Integer usbUartProductID) {
-        this.usbUartProductID = usbUartProductID;
+    public void setLoggingProbe(List<String> loggingProbe) {
+        this.loggingProbe = loggingProbe;
     }
 
     public List<String> getSignals() {
