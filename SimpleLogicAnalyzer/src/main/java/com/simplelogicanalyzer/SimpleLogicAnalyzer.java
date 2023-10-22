@@ -21,8 +21,16 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -34,6 +42,7 @@ public class SimpleLogicAnalyzer extends Application {
 
     public static Scene scene;
     SimpleBooleanProperty collectingData = new SimpleBooleanProperty(false);
+    boolean readingFromUSB = true;
     SerialPort probeSerial;
     ArrayList<SerialPort> logSerial = new ArrayList<>();
     SimpleBooleanProperty showingLogs = new SimpleBooleanProperty(false);
@@ -183,54 +192,124 @@ public class SimpleLogicAnalyzer extends Application {
         logPortsButtons.setSpacing(10);
         logPortsButtons.setPadding(new Insets(5));
         toolbarLayout.setRight(logPortsButtons);
-        
-        System.out.println("Available ports:");
-        for(SerialPort serial:SerialPort.getCommPorts()){
-            System.out.println(serial.getSystemPortName() + ", " + serial.getDescriptivePortName() + ", " + serial.getProductID());
 
-            if(serial.getProductID() == configData.getLogicProbeProductID() || serial.getProductID() == configData.getUsbUartProductID()){
-                serial.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
-                serial.setBaudRate(9600);
-                serial.openPort();
-                serial.getInputStream().skip(serial.bytesAvailable());
+        System.out.println(getParameters().getRaw());
 
-                if(serial.getProductID() == configData.getLogicProbeProductID()){
-                    rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
-                    serial.addDataListener(new SerialPortDataListenerImpl(rawProbeData, collectingData));
-                    probeSerial = serial;
+        if(getParameters().getRaw().size() > 0){
+            readingFromUSB = false;
+            Path filePath = Paths.get(getParameters().getRaw().get(0));
+            System.out.println("Reading from file: " + filePath);
+
+            WatchService service = FileSystems.getDefault().newWatchService();
+            filePath.getParent().register(service, java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
+            Thread thread = new Thread(() -> {
+                while(true){
+                    try {
+                        WatchKey key = service.take();
+                        for(WatchEvent<?> event : key.pollEvents()){
+                            if(filePath.getFileName().equals(event.context())){
+                                // File has changed, get the last line
+                                RandomAccessFile raf = new RandomAccessFile(filePath.toFile(), "r");
+                                long length = raf.length() - 1;
+                                StringBuilder sb = new StringBuilder();
+
+                                for (long pointer = length; pointer >= 0; pointer--) {
+                                    raf.seek(pointer);
+                                    char c = (char) raf.read();
+                                    if (c == '\n' && pointer < length) {
+                                        break;
+                                    }
+                                    sb.append(c);
+                                }
+
+                                String newLine = sb.reverse().toString().strip();
+                                String[] messageSplit = newLine.split(" ");
+
+                                Platform.runLater(() -> {
+                                    for(int i = 0; i < messageSplit.length; i++){
+                                        if(i > configData.getSignals().size()) break;
+                        
+                                        if(collectingData.get()){
+                                            Signal signal = signals.get(i);
+                                            try{
+                                                signal.series.getData().add(new XYChart.Data<>(
+                                                        signal.series.getData().size(),
+                                                        Integer.parseInt(messageSplit[i])
+                                                ));
+                                            } catch (NumberFormatException e){
+                                                break;
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                        key.reset();
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (FileNotFoundException e) {
+                        e.printStackTrace();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                 }
+            });
+            thread.setDaemon(true);
+            thread.start();
 
-                if(serial.getProductID() == configData.getUsbUartProductID()){
-                    ObservableList<DataPoint> observableList = FXCollections.observableArrayList();
-                    rawLogData.add(observableList);
-                    serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
-                    observableList.addListener(new LogDataListener(collectingData, signals));
-                    logSerial.add(serial);
+            rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
 
-                    Button usartButton = new Button(serial.getSystemPortName());
-                    usartButton.setOnAction(new EventHandler<ActionEvent>() {
-                        @Override
-                        public void handle(ActionEvent actionEvent) {
-                            Platform.runLater(() -> {
-                                if(showingLogs.get()){
-                                    if(logsListView.getItems().equals(observableList)){
-                                        usartButton.setBorder(null);
-                                        showingLogs.set(false);
+        } else {
+            System.out.println("Available ports:");
+            for(SerialPort serial:SerialPort.getCommPorts()){
+                System.out.println(serial.getSystemPortName() + ", " + serial.getDescriptivePortName() + ", " + serial.getProductID());
+    
+                if(serial.getProductID() == configData.getLogicProbeProductID() || serial.getProductID() == configData.getUsbUartProductID()){
+                    serial.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
+                    serial.setBaudRate(9600);
+                    serial.openPort();
+                    serial.getInputStream().skip(serial.bytesAvailable());
+    
+                    if(serial.getProductID() == configData.getLogicProbeProductID()){
+                        rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
+                        serial.addDataListener(new SerialPortDataListenerImpl(rawProbeData, collectingData));
+                        probeSerial = serial;
+                    }
+    
+                    if(serial.getProductID() == configData.getUsbUartProductID()){
+                        ObservableList<DataPoint> observableList = FXCollections.observableArrayList();
+                        rawLogData.add(observableList);
+                        serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
+                        observableList.addListener(new LogDataListener(collectingData, signals));
+                        logSerial.add(serial);
+    
+                        Button usartButton = new Button(serial.getSystemPortName());
+                        usartButton.setOnAction(new EventHandler<ActionEvent>() {
+                            @Override
+                            public void handle(ActionEvent actionEvent) {
+                                Platform.runLater(() -> {
+                                    if(showingLogs.get()){
+                                        if(logsListView.getItems().equals(observableList)){
+                                            usartButton.setBorder(null);
+                                            showingLogs.set(false);
+                                        } else {
+                                            logsListView.setItems(observableList);
+                                        }
                                     } else {
+                                        showingLogs.set(true);
                                         logsListView.setItems(observableList);
                                     }
-                                } else {
-                                    showingLogs.set(true);
-                                    logsListView.setItems(observableList);
-                                }
-                            });
-                        }
-                    });
-
-                    logPortsButtons.getChildren().add(usartButton);
+                                });
+                            }
+                        });
+    
+                        logPortsButtons.getChildren().add(usartButton);
+                    }
                 }
             }
         }
+        
 
         Button startButton = new Button("START");
         Button pauseButton = new Button("PAUSE");
@@ -246,12 +325,12 @@ public class SimpleLogicAnalyzer extends Application {
                 if (collectingData.get()) {
                     collectingData.set(false);
                     startButton.setText("START");
-                    probeSerial.getOutputStream().write("stop".getBytes());
+                    if(readingFromUSB) probeSerial.getOutputStream().write("stop".getBytes());
                 } else {
                     collectingData.set(true);
                     timestamp.set(System.currentTimeMillis());
                     startButton.setText("STOP");
-                    probeSerial.getOutputStream().write("start".getBytes());
+                    if(readingFromUSB) probeSerial.getOutputStream().write("start".getBytes());
                 }
             } catch (IOException e){
                 e.printStackTrace();

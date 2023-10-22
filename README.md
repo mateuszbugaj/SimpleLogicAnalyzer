@@ -21,3 +21,8 @@ Controls:
 - Use scrollbars to move lists
 - Click "START" to send signal to the Arduino to start transmitting measurements. Click "PAUSE" to stop the timeline from moving and "CLEAR" to remove data points and reset the stopwatch. 
 - Click the log on the list to highlight it on the Log Panel and show when it was issued.
+
+To run the program from a file insted of using the USB:
+```
+mvn javafx:run -Djavafx.args="path/to/the/probe/file.txt"
+```
