@@ -42,78 +42,119 @@ import javafx.util.Callback;
 
 public class SimpleLogicAnalyzer extends Application {
 
-    public static Scene scene;
-    SimpleBooleanProperty collectingData = new SimpleBooleanProperty(false);
-    boolean readingFromUSB = true;
-    SerialPort probeSerial;
-    ArrayList<SerialPort> logSerial = new ArrayList<>();
-    SimpleBooleanProperty showingLogs = new SimpleBooleanProperty(false);
-    SimpleLongProperty timestamp = new SimpleLongProperty();
+    private final SimpleBooleanProperty collectingData = new SimpleBooleanProperty(false);
+    private boolean readingFromUSB = true;
+    private SerialPort probeSerial;
+    private final SimpleBooleanProperty showingLogs = new SimpleBooleanProperty(false);
+    private final SimpleLongProperty timestamp = new SimpleLongProperty();
+    private JsonData configData;
+    private final ArrayList<Signal> signals = new ArrayList<>();
+    private final ObservableList<DataPoint> rawProbeData = FXCollections.observableArrayList();
+    private final ArrayList<ObservableList<DataPoint>> rawLogData = new ArrayList<>();
 
     @Override
     public void start(Stage stage) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         InputStream propertiesInputStream = JsonParser.class.getClassLoader().getResourceAsStream(getParameters().getRaw().get(0));
-        JsonData configData = mapper.readValue(propertiesInputStream, JsonData.class);
+        if(propertiesInputStream == null){
+            System.out.println("Analyzer properties file " + getParameters().getRaw().get(0) + " not found.");
+            System.exit(0);
+        }
+
+        configData = mapper.readValue(propertiesInputStream, JsonData.class);
 
         BorderPane mainLayout = new BorderPane(); // Positions toolbar at the top, center layout at center and logsListView at the right
         BorderPane centerLayout = new BorderPane(); // Positions signal charts scroll pane at center
         mainLayout.setCenter(centerLayout);
         
-        ScrollPane signalChartsScrollPane = new ScrollPane();
-        signalChartsScrollPane.maxWidth(Double.MAX_VALUE);
-        signalChartsScrollPane.prefWidth(Double.MAX_VALUE);
-        signalChartsScrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-
-        // Disable scrolling on the scroll pane
-        signalChartsScrollPane.addEventFilter(ScrollEvent.SCROLL, event -> {
-            if(event.getDeltaY() != 0 || event.getDeltaX() != 0) {
-                event.consume();
-            }
-        });
-        
+        ScrollPane signalChartsScrollPane = createSignalChartsScrollPane();
         centerLayout.setCenter(signalChartsScrollPane);
 
-        // Create log list view
-        ListView<DataPoint> logsListView = new ListView<>();
-        logsListView.setPrefWidth(400);
-        logsListView.visibleProperty().bind(showingLogs);
-        logsListView.managedProperty().bind(showingLogs);
+        VBox signalCharts = createSignalCharts(signalChartsScrollPane);
+        signalChartsScrollPane.setContent(signalCharts);
 
-        logsListView.addEventFilter(ScrollEvent.SCROLL, event -> {
+        ScatterChart<Number,Number> logPanelChart = createLogPanel();
+        centerLayout.setBottom(logPanelChart);
+
+        ListView<DataPoint> logsListView = createLogList(logPanelChart);
+        mainLayout.setRight(logsListView);
+
+        BorderPane toolbarLayout = createToolbar();
+        mainLayout.setTop(toolbarLayout);
+
+        if(configData.getLogicProbe().contains(".txt")){
+            // Read data from file
+            Path filePath = Paths.get(configData.getLogicProbe());
+            try (Stream<String> stream = Files.lines(filePath)) {
+                stream.forEach(newLine -> {
+                    String[] messageSplit = newLine.strip().split(" ");
+
+                    Platform.runLater(() -> {
+                        for(int i = 0; i < messageSplit.length; i++){
+                            if(i > configData.getSignals().size()) break;
+
+                            Signal signal = signals.get(i);
+                            try{
+                                signal.series.getData().add(new XYChart.Data<>(
+                                        signal.series.getData().size(),
+                                        Integer.parseInt(messageSplit[i])
+                                ));
+                            } catch (NumberFormatException e){
+                                break;
+                            }
+                        }
+                    });
+                });
+            }
+
+            configureFileDataListeners(configData, rawProbeData, signals);
+        } else {
+            List<Button> usartButtons = configureSerialDataListeners(configData, rawProbeData, signals, rawLogData, logsListView);
+
+            HBox logPortsButtons = new HBox();
+            logPortsButtons.setSpacing(10);
+            logPortsButtons.setPadding(new Insets(5));
+            logPortsButtons.getChildren().addAll(usartButtons);
+
+            toolbarLayout.setRight(logPortsButtons);
+        }
+
+        Scene scene = new Scene(mainLayout,800,600);
+        stage.setScene(scene);
+        stage.setFullScreen(true);
+        stage.show();
+
+        scene.addEventFilter(ScrollEvent.ANY, event -> {
+            if(event.getDeltaX() != 0){
+                signals.forEach(signal -> signal.zoom(event.getDeltaX()));
+            }
+
+            if(event.getDeltaY() != 0){
+                signals.forEach(signal -> signal.scroll(event.getDeltaY()));
+            }
+        });
+    }
+
+    private ScrollPane createSignalChartsScrollPane(){
+        ScrollPane scrollPane = new ScrollPane();
+        scrollPane.maxWidth(Double.MAX_VALUE);
+        scrollPane.prefWidth(Double.MAX_VALUE);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+
+        // Disable scrolling on the scroll pane
+        scrollPane.addEventFilter(ScrollEvent.SCROLL, event -> {
             if(event.getDeltaY() != 0 || event.getDeltaX() != 0) {
                 event.consume();
             }
         });
 
-        logsListView.setCellFactory(new Callback<>() {
-            @Override
-            public ListCell<DataPoint> call(ListView<DataPoint> dataPointListView) {
-                return new ListCell<>() {
-                    @Override
-                    protected void updateItem(DataPoint dataPoint, boolean empty) {
-                        super.updateItem(dataPoint, empty);
-                        if (dataPoint != null && !empty) {
-                            SimpleDateFormat sdf = new SimpleDateFormat("[ss.SSS] ");
-                            long timeDelta = dataPoint.timestamp - timestamp.get();
-                            String formattedDate = sdf.format(new Date(timeDelta));
-                            setText(formattedDate + dataPoint.content);
-                        } else {
-                            setText(null);
-                        }
-                    }
-                };
-            }
-        });
+        return scrollPane;
+    }
 
-        mainLayout.setRight(logsListView);
-
-        // Create signal charts
+    private VBox createSignalCharts(ScrollPane parent){
         VBox signalCHartsVBox = new VBox();
-        signalChartsScrollPane.setContent(signalCHartsVBox);
-        signalCHartsVBox.prefWidthProperty().bind(signalChartsScrollPane.widthProperty());
+        signalCHartsVBox.prefWidthProperty().bind(parent.widthProperty());
 
-        ArrayList<Signal> signals = new ArrayList<>();
         for(int signalIndex = 0; signalIndex < configData.getSignals().size(); signalIndex++){
             String signalName = configData.getSignals().get(signalIndex);
             XYChart.Series<Number, Number> signalChartDataSeries = new XYChart.Series<>();
@@ -127,7 +168,6 @@ public class SimpleLogicAnalyzer extends Application {
             LineChart<Number,Number> signalChart = new LineChart<>(signalChartXAxis, signalChartYAxis, FXCollections.observableArrayList(signalChartDataSeries));
             configureChart(signalChart, signalChartXAxis, signalChartYAxis);
             signalChart.setCreateSymbols(false);
-            signalChart.prefWidthProperty().bind(mainLayout.widthProperty());
             signalChart.setPrefHeight(50);
 
             if(signalIndex%2==0){
@@ -140,10 +180,10 @@ public class SimpleLogicAnalyzer extends Application {
             signals.add(new Signal(signalName, signalChart, signalChartDataSeries, signalChartXAxis));
         }
 
-        // Create log panel
-        ObservableList<DataPoint> rawProbeData = FXCollections.observableArrayList();
-        ArrayList<ObservableList<DataPoint>> rawLogData = new ArrayList<>();
+        return signalCHartsVBox;
+    }
 
+    private ScatterChart<Number,Number> createLogPanel(){
         NumberAxis logPanelXAxis = new NumberAxis();
         NumberAxis logPanelYAxis = new NumberAxis();
         logPanelYAxis.setLabel("Log data");
@@ -153,9 +193,24 @@ public class SimpleLogicAnalyzer extends Application {
         configureChart(logPanelChart, logPanelXAxis, logPanelYAxis);
         logPanelChart.setMaxHeight(300);
         logPanelChart.setPrefHeight(300);
-        logPanelChart.prefWidthProperty().bind(mainLayout.widthProperty());
         signals.add(new Signal("Log Panel", logPanelChart, logPanelDataSeries, logPanelXAxis, signals.get(0).series));
-        centerLayout.setBottom(logPanelChart);
+
+        return logPanelChart;
+    }
+
+    private ListView<DataPoint> createLogList(ScatterChart<Number,Number> logPanelChart){
+        ListView<DataPoint> logsListView = new ListView<>();
+        logsListView.setPrefWidth(400);
+        logsListView.visibleProperty().bind(showingLogs);
+        logsListView.managedProperty().bind(showingLogs);
+
+        logsListView.addEventFilter(ScrollEvent.SCROLL, event -> {
+            if(event.getDeltaY() != 0 || event.getDeltaX() != 0) {
+                event.consume();
+            }
+        });
+
+        logsListView.setCellFactory(new LogsListViewCellFactory(timestamp));
 
         logsListView.setOnMouseClicked(event -> {
             DataPoint selectedDataPoint = logsListView.getSelectionModel().getSelectedItem();
@@ -175,7 +230,7 @@ public class SimpleLogicAnalyzer extends Application {
                                 try {
                                     signalChart = (LineChart<Number, Number>) signal.lineChart;
                                     addVerticalLineToChart(signalChart, selectedDataPoint.chartXPosition);
-                                } catch (ClassCastException e){}
+                                } catch (ClassCastException ignored){}
 
                             }
 
@@ -186,46 +241,11 @@ public class SimpleLogicAnalyzer extends Application {
             }
         });
 
-        // Configure data ports
+        return logsListView;
+    }
+
+    private BorderPane createToolbar(){
         BorderPane toolbarLayout = new BorderPane();
-        mainLayout.setTop(toolbarLayout);
-
-        HBox logPortsButtons = new HBox();
-        logPortsButtons.setSpacing(10);
-        logPortsButtons.setPadding(new Insets(5));
-        toolbarLayout.setRight(logPortsButtons);
-
-        if(configData.getLogicProbe().contains(".txt")){
-            // Read data from file
-            Path filePath = Paths.get(configData.getLogicProbe());
-            try (Stream<String> stream = Files.lines(filePath)) {
-                stream.forEach(newLine -> {
-                    String[] messageSplit = newLine.strip().split(" ");
-
-                    Platform.runLater(() -> {
-                        for(int i = 0; i < messageSplit.length; i++){
-                            if(i > configData.getSignals().size()) break;
-            
-                            Signal signal = signals.get(i);
-                            try{
-                                signal.series.getData().add(new XYChart.Data<>(
-                                        signal.series.getData().size(),
-                                        Integer.parseInt(messageSplit[i])
-                                ));
-                            } catch (NumberFormatException e){
-                                break;
-                            }
-                        }
-                    });
-                });
-            }
-
-            configureFileDataListeners(configData, rawProbeData, signals);
-        } else {
-            List<Button> usartButtons = configureSerialDataListeners(configData, rawProbeData, signals, rawLogData, logsListView);
-            logPortsButtons.getChildren().addAll(usartButtons);
-        }
-        
 
         Button startButton = new Button("START");
         Button pauseButton = new Button("PAUSE");
@@ -235,7 +255,7 @@ public class SimpleLogicAnalyzer extends Application {
         toolbarLeftHBox.setSpacing(10);
         toolbarLeftHBox.setPadding(new Insets(5));
         toolbarLayout.setLeft(toolbarLeftHBox);
-        
+
         startButton.setOnAction(event -> {
             try {
                 if (collectingData.get()) {
@@ -287,81 +307,14 @@ public class SimpleLogicAnalyzer extends Application {
 
         toolbarLayout.setCenter(signalCheckBoxes);
 
-        scene  = new Scene(mainLayout,800,600);
-        stage.setScene(scene);
-        stage.setFullScreen(true);
-        stage.show();
-
-        scene.addEventFilter(ScrollEvent.ANY, event -> {
-            if(event.getDeltaX() != 0){
-                signals.forEach(signal -> signal.zoom(event.getDeltaX()));
-            }
-
-            if(event.getDeltaY() != 0){
-                signals.forEach(signal -> signal.scroll(event.getDeltaY()));
-            }
-        });
+        return toolbarLayout;
     }
 
-    private void configureFileDataListeners(JsonData configData, ObservableList<DataPoint> rawProbeData, ArrayList<Signal> signals) throws IOException{
+    private void configureFileDataListeners(JsonData configData, ObservableList<DataPoint> rawProbeData, ArrayList<Signal> signals) {
         readingFromUSB = false;
-        Path filePath = Paths.get(configData.getLogicProbe());
 
-        WatchService service = FileSystems.getDefault().newWatchService();
-        filePath.getParent().register(service, java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
-        Thread thread = new Thread(() -> {
-            while(true){
-                try {
-                    WatchKey key = service.take();
-                    for(WatchEvent<?> event : key.pollEvents()){
-                        if(filePath.getFileName().equals(event.context())){
-                            // File has changed, get the last line
-                            RandomAccessFile raf = new RandomAccessFile(filePath.toFile(), "r");
-                            long length = raf.length() - 1;
-                            StringBuilder sb = new StringBuilder();
-
-                            for (long pointer = length; pointer >= 0; pointer--) {
-                                raf.seek(pointer);
-                                char c = (char) raf.read();
-                                if (c == '\n' && pointer < length) {
-                                    break;
-                                }
-                                sb.append(c);
-                            }
-
-                            String newLine = sb.reverse().toString().strip();
-                            String[] messageSplit = newLine.split(" ");
-
-                            Platform.runLater(() -> {
-                                for(int i = 0; i < messageSplit.length; i++){
-                                    if(i > configData.getSignals().size()) break;
-                    
-                                    if(collectingData.get()){
-                                        Signal signal = signals.get(i);
-                                        try{
-                                            signal.series.getData().add(new XYChart.Data<>(
-                                                    signal.series.getData().size(),
-                                                    Integer.parseInt(messageSplit[i])
-                                            ));
-                                        } catch (NumberFormatException e){
-                                            break;
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    }
-                    key.reset();
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (FileNotFoundException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        });
+        FileChangeListener fileChangeListener = new FileChangeListener(configData, collectingData, signals);
+        Thread thread = new Thread(fileChangeListener);
         thread.setDaemon(true);
         thread.start();
 
@@ -397,7 +350,6 @@ public class SimpleLogicAnalyzer extends Application {
                     rawLogData.add(observableList);
                     serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
                     observableList.addListener(new LogDataListener(collectingData, signals));
-                    logSerial.add(serial);
 
                     Button usartButton = new Button(serial.getSystemPortName());
                     usartButton.setOnAction(new EventHandler<ActionEvent>() {
@@ -419,7 +371,6 @@ public class SimpleLogicAnalyzer extends Application {
                         }
                     });
                     usartButtons.add(usartButton);
-                    continue;
                 }
             }
         }
