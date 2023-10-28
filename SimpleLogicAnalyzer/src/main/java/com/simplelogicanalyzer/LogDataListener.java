@@ -14,15 +14,15 @@ import java.util.ArrayList;
 import java.util.Optional;
 
 public class LogDataListener implements ListChangeListener<DataPoint> {
-    private final SimpleBooleanProperty collectingData;
     private final ArrayList<Signal> signals;
+    private final Signal logSignal;
     private static int id = 0; // used for color-coding
     private final int instanceIndex;
     private static double y = 0.9;
 
-    public LogDataListener(SimpleBooleanProperty collectingData, ArrayList<Signal> signals) {
-        this.collectingData = collectingData;
+    public LogDataListener(ArrayList<Signal> signals, Signal logSignal) {
         this.signals = signals;
+        this.logSignal = logSignal;
 
         instanceIndex = id;
         id++;
@@ -37,18 +37,13 @@ public class LogDataListener implements ListChangeListener<DataPoint> {
         DataPoint dataPoint = change.getAddedSubList().get(0);
         String newData = dataPoint.content;
         Platform.runLater(() -> {
-            if(collectingData.get()){
-                Optional<Signal> signal = signals.stream().filter(s -> s.name.equals("Log Panel")).findAny();
-                if(signal.isPresent()){
-                    var data = new XYChart.Data<Number, Number>(signals.get(0).series.getData().size(), y);
-                    data.setNode(createDataNode(newData));
-                    signal.get().series.getData().add(data);
-                    dataPoint.chartXPosition = signals.get(0).series.getData().size();
+            var data = new XYChart.Data<Number, Number>(signals.get(0).series.getData().size(), y);
+            data.setNode(createDataNode(newData));
+            logSignal.series.getData().add(data);
+            dataPoint.chartXPosition = signals.get(0).series.getData().size();
 
-                    y += -0.1;
-                    if(y < 0.2) y = 0.9;
-                }
-            }
+            y += -0.1;
+            if(y < 0.2) y = 0.9;
         });
     }
 

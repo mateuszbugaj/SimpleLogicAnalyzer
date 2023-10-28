@@ -1,5 +1,6 @@
 package com.simplelogicanalyzer;
 
+import javafx.application.Platform;
 import javafx.beans.property.SimpleLongProperty;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -31,13 +32,15 @@ class LogListCell extends ListCell<DataPoint> {
     @Override
     protected void updateItem(DataPoint dataPoint, boolean empty) {
         super.updateItem(dataPoint, empty);
-        if (dataPoint != null && !empty) {
-            SimpleDateFormat sdf = new SimpleDateFormat("[ss.SSS] ");
-            long timeDelta = dataPoint.timestamp - timestamp.get();
-            String formattedDate = sdf.format(new Date(timeDelta));
-            setText(formattedDate + dataPoint.content);
-        } else {
-            setText(null);
-        }
+        Platform.runLater(() -> {
+            if (dataPoint != null && !empty) {
+                SimpleDateFormat sdf = new SimpleDateFormat("[ss.SSS] ");
+                long timeDelta = dataPoint.timestamp - timestamp.get();
+                String formattedDate = sdf.format(new Date(timeDelta));
+                setText(formattedDate + dataPoint.content);
+            } else {
+                setText(null);
+            }
+        });
     }
 }

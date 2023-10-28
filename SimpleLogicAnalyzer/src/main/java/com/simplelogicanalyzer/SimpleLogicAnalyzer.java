@@ -21,36 +21,26 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.RandomAccessFile;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.WatchEvent;
-import java.nio.file.WatchKey;
-import java.nio.file.WatchService;
-import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Stream;
 
 import com.fazecast.jSerialComm.SerialPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import javafx.util.Callback;
 
 public class SimpleLogicAnalyzer extends Application {
 
     private final SimpleBooleanProperty collectingData = new SimpleBooleanProperty(false);
-    private boolean readingFromUSB = true;
-    private SerialPort probeSerial;
     private final SimpleBooleanProperty showingLogs = new SimpleBooleanProperty(false);
     private final SimpleLongProperty timestamp = new SimpleLongProperty();
-    private JsonData configData;
+    private ConfigurationData configData;
     private final ArrayList<Signal> signals = new ArrayList<>();
-    private final ObservableList<DataPoint> rawProbeData = FXCollections.observableArrayList();
-    private final ArrayList<ObservableList<DataPoint>> rawLogData = new ArrayList<>();
+    private Signal logSignal;
+    private DataProvider dataProvider;
 
     @Override
     public void start(Stage stage) throws IOException {
@@ -61,63 +51,56 @@ public class SimpleLogicAnalyzer extends Application {
             System.exit(0);
         }
 
-        configData = mapper.readValue(propertiesInputStream, JsonData.class);
+        configData = mapper.readValue(propertiesInputStream, ConfigurationData.class);
 
-        BorderPane mainLayout = new BorderPane(); // Positions toolbar at the top, center layout at center and logsListView at the right
-        BorderPane centerLayout = new BorderPane(); // Positions signal charts scroll pane at center
+        BorderPane mainLayout = new BorderPane();
+        BorderPane centerLayout = new BorderPane();
         mainLayout.setCenter(centerLayout);
-        
+
         ScrollPane signalChartsScrollPane = createSignalChartsScrollPane();
         centerLayout.setCenter(signalChartsScrollPane);
 
         VBox signalCharts = createSignalCharts(signalChartsScrollPane);
         signalChartsScrollPane.setContent(signalCharts);
 
-        ScatterChart<Number,Number> logPanelChart = createLogPanel();
+        ScatterChart<Number, Number> logPanelChart = createLogPanel();
         centerLayout.setBottom(logPanelChart);
 
-        ListView<DataPoint> logsListView = createLogList(logPanelChart);
+        DataProviderBuilder dataProviderBuilder = new DataProviderBuilder(configData, signals, logSignal);
+        dataProvider = dataProviderBuilder.getDataProvider();
+
+        ListView<DataPoint> logsListView = createLogList();
         mainLayout.setRight(logsListView);
 
         BorderPane toolbarLayout = createToolbar();
         mainLayout.setTop(toolbarLayout);
 
-        if(configData.getLogicProbe().contains(".txt")){
-            // Read data from file
-            Path filePath = Paths.get(configData.getLogicProbe());
-            try (Stream<String> stream = Files.lines(filePath)) {
-                stream.forEach(newLine -> {
-                    String[] messageSplit = newLine.strip().split(" ");
-
-                    Platform.runLater(() -> {
-                        for(int i = 0; i < messageSplit.length; i++){
-                            if(i > configData.getSignals().size()) break;
-
-                            Signal signal = signals.get(i);
-                            try{
-                                signal.series.getData().add(new XYChart.Data<>(
-                                        signal.series.getData().size(),
-                                        Integer.parseInt(messageSplit[i])
-                                ));
-                            } catch (NumberFormatException e){
-                                break;
-                            }
+        HBox logButtons = new HBox();
+        logButtons.setSpacing(10);
+        logButtons.setPadding(new Insets(5));
+        for(int i = 0; i < dataProvider.getLogDataList().size(); i++){
+            ObservableList<DataPoint> logList = dataProvider.getLogDataList().get(i);
+            Button showLogButton = new Button(configData.getLoggingProbe().get(i));
+            showLogButton.setOnAction(new EventHandler<ActionEvent>() {
+                @Override
+                public void handle(ActionEvent actionEvent) {
+                    if(showingLogs.get()){
+                        if(logsListView.getItems().equals(logList)){
+                            showLogButton.setBorder(null);
+                            showingLogs.set(false);
+                        } else {
+                            logsListView.setItems(logList);
                         }
-                    });
-                });
-            }
+                    } else {
+                        showingLogs.set(true);
+                        logsListView.setItems(logList);
+                    }
+                }
+            });
 
-            configureFileDataListeners(configData, rawProbeData, signals);
-        } else {
-            List<Button> usartButtons = configureSerialDataListeners(configData, rawProbeData, signals, rawLogData, logsListView);
-
-            HBox logPortsButtons = new HBox();
-            logPortsButtons.setSpacing(10);
-            logPortsButtons.setPadding(new Insets(5));
-            logPortsButtons.getChildren().addAll(usartButtons);
-
-            toolbarLayout.setRight(logPortsButtons);
+            logButtons.getChildren().addAll(showLogButton);
         }
+        toolbarLayout.setRight(logButtons);
 
         Scene scene = new Scene(mainLayout,800,600);
         stage.setScene(scene);
@@ -127,10 +110,12 @@ public class SimpleLogicAnalyzer extends Application {
         scene.addEventFilter(ScrollEvent.ANY, event -> {
             if(event.getDeltaX() != 0){
                 signals.forEach(signal -> signal.zoom(event.getDeltaX()));
+                logSignal.zoom(event.getDeltaX());
             }
 
             if(event.getDeltaY() != 0){
                 signals.forEach(signal -> signal.scroll(event.getDeltaY()));
+                logSignal.scroll(event.getDeltaY());
             }
         });
     }
@@ -193,12 +178,12 @@ public class SimpleLogicAnalyzer extends Application {
         configureChart(logPanelChart, logPanelXAxis, logPanelYAxis);
         logPanelChart.setMaxHeight(300);
         logPanelChart.setPrefHeight(300);
-        signals.add(new Signal("Log Panel", logPanelChart, logPanelDataSeries, logPanelXAxis, signals.get(0).series));
+        logSignal = new Signal("Log Panel", logPanelChart, logPanelDataSeries, logPanelXAxis, signals.get(0).series);
 
         return logPanelChart;
     }
 
-    private ListView<DataPoint> createLogList(ScatterChart<Number,Number> logPanelChart){
+    private ListView<DataPoint> createLogList(){
         ListView<DataPoint> logsListView = new ListView<>();
         logsListView.setPrefWidth(400);
         logsListView.visibleProperty().bind(showingLogs);
@@ -215,29 +200,29 @@ public class SimpleLogicAnalyzer extends Application {
         logsListView.setOnMouseClicked(event -> {
             DataPoint selectedDataPoint = logsListView.getSelectionModel().getSelectedItem();
             if (selectedDataPoint != null) {
-                for (XYChart.Data<Number, Number> data : logPanelChart.getData().get(0).getData()) {
-                    Node node = data.getNode();
-                    if (node instanceof Pane) {
-                        Label label = (Label) ((Pane) node).getChildren().get(0);
-                        label.setStyle("-fx-text-fill: black;");
+                for (XYChart.Data<Number, Number> data : logSignal.series.getData()) {
+                        Node node = data.getNode();
+                        if (node instanceof Pane) {
+                            Label label = (Label) ((Pane) node).getChildren().get(0);
+                            label.setStyle("-fx-text-fill: black;");
 
-                        if (data.getXValue().equals(selectedDataPoint.chartXPosition) && label.getText().equals(selectedDataPoint.content)) {
-                            label.setStyle("-fx-text-fill: red;");
+                            if (data.getXValue().equals(selectedDataPoint.chartXPosition) && label.getText().equals(selectedDataPoint.content)) {
+                                label.setStyle("-fx-text-fill: red;");
 
-                            // Add the vertical line to each signal chart
-                            for (Signal signal : signals) {
-                                LineChart<Number, Number> signalChart;
-                                try {
-                                    signalChart = (LineChart<Number, Number>) signal.lineChart;
-                                    addVerticalLineToChart(signalChart, selectedDataPoint.chartXPosition);
-                                } catch (ClassCastException ignored){}
+                                // Add the vertical line to each signal chart
+                                for (Signal signal : signals) {
+                                    LineChart<Number, Number> signalChart;
+                                    try {
+                                        signalChart = (LineChart<Number, Number>) signal.lineChart;
+                                        addVerticalLineToChart(signalChart, selectedDataPoint.chartXPosition);
+                                    } catch (ClassCastException ignored){}
 
+                                }
+
+                                addVerticalLineToChart(logSignal.series.getChart(), selectedDataPoint.chartXPosition);
                             }
-
-                            addVerticalLineToChart(logPanelChart, selectedDataPoint.chartXPosition);
                         }
                     }
-                }
             }
         });
 
@@ -257,19 +242,15 @@ public class SimpleLogicAnalyzer extends Application {
         toolbarLayout.setLeft(toolbarLeftHBox);
 
         startButton.setOnAction(event -> {
-            try {
-                if (collectingData.get()) {
-                    collectingData.set(false);
-                    startButton.setText("START");
-                    if(readingFromUSB) probeSerial.getOutputStream().write("stop".getBytes());
-                } else {
-                    collectingData.set(true);
-                    timestamp.set(System.currentTimeMillis());
-                    startButton.setText("STOP");
-                    if(readingFromUSB) probeSerial.getOutputStream().write("start".getBytes());
-                }
-            } catch (IOException e){
-                e.printStackTrace();
+            if (collectingData.get()) {
+                collectingData.set(false);
+                startButton.setText("START");
+                dataProvider.send("stop");
+            } else {
+                collectingData.set(true);
+                timestamp.set(System.currentTimeMillis());
+                startButton.setText("STOP");
+                dataProvider.send("start");
             }
         });
 
@@ -286,8 +267,6 @@ public class SimpleLogicAnalyzer extends Application {
         clearButton.setOnAction(actionEvent -> {
             timestamp.set(System.currentTimeMillis());
             signals.forEach(Signal::clear);
-            rawProbeData.clear();
-            rawLogData.forEach(List::clear);
         });
 
         // Create selectable list of signals to show
@@ -308,74 +287,6 @@ public class SimpleLogicAnalyzer extends Application {
         toolbarLayout.setCenter(signalCheckBoxes);
 
         return toolbarLayout;
-    }
-
-    private void configureFileDataListeners(JsonData configData, ObservableList<DataPoint> rawProbeData, ArrayList<Signal> signals) {
-        readingFromUSB = false;
-
-        FileChangeListener fileChangeListener = new FileChangeListener(configData, collectingData, signals);
-        Thread thread = new Thread(fileChangeListener);
-        thread.setDaemon(true);
-        thread.start();
-
-        rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
-    }
-
-    private List<Button> configureSerialDataListeners(JsonData configData, ObservableList<DataPoint> rawProbeData, ArrayList<Signal> signals, ArrayList<ObservableList<DataPoint>> rawLogData, ListView<DataPoint> logsListView) throws IOException {
-        System.out.println("Logic probe: " + configData.getLogicProbe());
-        System.out.println("Logging probe: " + configData.getLoggingProbe());
-        System.out.println("Available ports:");
-
-        List<Button> usartButtons = new ArrayList<>();
-        for(SerialPort serial:SerialPort.getCommPorts()){
-            System.out.println(serial.getSystemPortName() + ", " + serial.getDescriptivePortName() + ", " + serial.getProductID() + ", " + serial.getSystemPortPath());
-
-            if(serial.getSystemPortPath().equals(configData.getLogicProbe()) || configData.getLoggingProbe().contains(serial.getSystemPortPath())){
-                serial.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
-                serial.setBaudRate(9600);
-                serial.openPort();
-                serial.getInputStream().skip(serial.bytesAvailable());
-
-                if(serial.getSystemPortPath().equals(configData.getLogicProbe())){
-                    System.out.println("Logic probe found");
-                    rawProbeData.addListener(new ProbeDataListener(configData, collectingData, signals));
-                    serial.addDataListener(new SerialPortDataListenerImpl(rawProbeData, collectingData));
-                    probeSerial = serial;
-                    continue;
-                }
-
-                if(configData.getLoggingProbe().contains(serial.getSystemPortPath())){
-                    System.out.println("Logging probe found");
-                    ObservableList<DataPoint> observableList = FXCollections.observableArrayList();
-                    rawLogData.add(observableList);
-                    serial.addDataListener(new SerialPortDataListenerImpl(observableList, collectingData));
-                    observableList.addListener(new LogDataListener(collectingData, signals));
-
-                    Button usartButton = new Button(serial.getSystemPortName());
-                    usartButton.setOnAction(new EventHandler<ActionEvent>() {
-                        @Override
-                        public void handle(ActionEvent actionEvent) {
-                            Platform.runLater(() -> {
-                                if(showingLogs.get()){
-                                    if(logsListView.getItems().equals(observableList)){
-                                        usartButton.setBorder(null);
-                                        showingLogs.set(false);
-                                    } else {
-                                        logsListView.setItems(observableList);
-                                    }
-                                } else {
-                                    showingLogs.set(true);
-                                    logsListView.setItems(observableList);
-                                }
-                            });
-                        }
-                    });
-                    usartButtons.add(usartButton);
-                }
-            }
-        }
-
-        return usartButtons;
     }
 
     private void configureChart(Chart chart, NumberAxis xAxis, NumberAxis yAxis){

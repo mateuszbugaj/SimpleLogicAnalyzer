@@ -1,78 +1,53 @@
 package com.simplelogicanalyzer;
 
-import javafx.application.Platform;
-import javafx.beans.property.SimpleBooleanProperty;
-import javafx.scene.chart.XYChart;
+import javafx.collections.ObservableList;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.file.*;
-import java.util.ArrayList;
 
 public class FileChangeListener implements Runnable{
-    private final JsonData configData;
-    private final SimpleBooleanProperty collectingData;
-    private final ArrayList<Signal> signals;
+    private final Path filepath;
+    private final ObservableList<String> output;
+    private long lastKnownPosition = 0;
 
-    public FileChangeListener(JsonData configData, SimpleBooleanProperty collectingData, ArrayList<Signal> signals) {
-        this.configData = configData;
-        this.collectingData = collectingData;
-        this.signals = signals;
+    public FileChangeListener(String filePath, ObservableList<String> output) {
+        this.filepath = Paths.get(filePath);
+        this.output = output;
     }
 
     @Override
     public void run() {
-        Path filePath = Paths.get(configData.getLogicProbe());
         try {
             WatchService service = FileSystems.getDefault().newWatchService();
-            filePath.getParent().register(service, java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
-            while(true){
+            filepath.getParent().register(service, java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
+
+            while (true) { // todo: check how to interrupt this loop
                 WatchKey key = service.take();
-                for(WatchEvent<?> event : key.pollEvents()){
-                    if(filePath.getFileName().equals(event.context())){
-                        // File has changed, get the last line
-                        RandomAccessFile raf = new RandomAccessFile(filePath.toFile(), "r");
-                        long length = raf.length() - 1;
-                        StringBuilder sb = new StringBuilder();
+                for (WatchEvent<?> event : key.pollEvents()) {
+                    if (filepath.getFileName().equals(event.context())) {
+                        // File has changed, get the new lines
+                        try (RandomAccessFile raf = new RandomAccessFile(filepath.toFile(), "r")) {
+                            long currentLength = raf.length();
+                            if (currentLength > lastKnownPosition) {
+                                raf.seek(lastKnownPosition); // Move to the last known position
 
-                        for (long pointer = length; pointer >= 0; pointer--) {
-                            raf.seek(pointer);
-                            char c = (char) raf.read();
-                            if (c == '\n' && pointer < length) {
-                                break;
-                            }
-                            sb.append(c);
-                        }
-
-                        String newLine = sb.reverse().toString().strip();
-                        String[] messageSplit = newLine.split(" ");
-
-                        Platform.runLater(() -> {
-                            for(int i = 0; i < messageSplit.length; i++){
-                                if(i > configData.getSignals().size()) break;
-
-                                if(collectingData.get()){
-                                    Signal signal = signals.get(i);
-                                    try{
-                                        signal.series.getData().add(new XYChart.Data<>(
-                                                signal.series.getData().size(),
-                                                Integer.parseInt(messageSplit[i])
-                                        ));
-                                    } catch (NumberFormatException e){
-                                        break;
+                                String line;
+                                while ((line = raf.readLine()) != null) {
+                                    if(!line.isBlank()){
+                                        output.add(line.strip());
                                     }
                                 }
+
+                                lastKnownPosition = currentLength; // Update the last known position
                             }
-                        });
+                        }
                     }
                 }
                 key.reset();
-                Thread.sleep(100);
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             throw new RuntimeException(e);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
         }
     }
 }

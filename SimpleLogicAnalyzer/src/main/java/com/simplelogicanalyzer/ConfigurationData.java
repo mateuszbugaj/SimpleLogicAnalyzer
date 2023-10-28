@@ -2,7 +2,7 @@ package com.simplelogicanalyzer;
 
 import java.util.List;
 
-public class JsonData {
+public class ConfigurationData {
 
     private String logicProbe;
     private List<String> loggingProbe;
