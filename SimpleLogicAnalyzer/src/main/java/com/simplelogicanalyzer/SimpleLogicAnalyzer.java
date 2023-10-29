@@ -203,24 +203,26 @@ public class SimpleLogicAnalyzer extends Application {
                 for (XYChart.Data<Number, Number> data : logSignal.series.getData()) {
                         Node node = data.getNode();
                         if (node instanceof Pane) {
-                            Label label = (Label) ((Pane) node).getChildren().get(0);
-                            label.setStyle("-fx-text-fill: black;");
+                            try {
+                                Label label = (Label) ((Pane) node).getChildren().get(0);
+                                label.setStyle("-fx-text-fill: black;");
 
-                            if (data.getXValue().equals(selectedDataPoint.chartXPosition) && label.getText().equals(selectedDataPoint.content)) {
-                                label.setStyle("-fx-text-fill: red;");
+                                if (data.getXValue().equals(selectedDataPoint.chartXPosition) && label.getText().equals(selectedDataPoint.content)) {
+                                    label.setStyle("-fx-text-fill: red;");
 
-                                // Add the vertical line to each signal chart
-                                for (Signal signal : signals) {
-                                    LineChart<Number, Number> signalChart;
-                                    try {
-                                        signalChart = (LineChart<Number, Number>) signal.lineChart;
-                                        addVerticalLineToChart(signalChart, selectedDataPoint.chartXPosition);
-                                    } catch (ClassCastException ignored){}
+                                    // Add the vertical line to each signal chart
+                                    for (Signal signal : signals) {
+                                        LineChart<Number, Number> signalChart;
+                                        try {
+                                            signalChart = (LineChart<Number, Number>) signal.lineChart;
+                                            addVerticalLineToChart(signalChart, selectedDataPoint.chartXPosition);
+                                        } catch (ClassCastException ignored){}
 
+                                    }
+
+                                    addVerticalLineToChart(logSignal.series.getChart(), selectedDataPoint.chartXPosition);
                                 }
-
-                                addVerticalLineToChart(logSignal.series.getChart(), selectedDataPoint.chartXPosition);
-                            }
+                            } catch (IndexOutOfBoundsException ignore){}
                         }
                     }
             }

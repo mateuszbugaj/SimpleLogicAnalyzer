@@ -93,5 +93,6 @@ public class FileDataProvider implements DataProvider{
         }
 
         logSignal.series.getData().add(new XYChart.Data<>(logSignal.series.getData().size(), 0));
+        logDataList.forEach(List::clear);
     }
 }
