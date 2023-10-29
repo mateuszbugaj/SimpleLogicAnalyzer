@@ -26,10 +26,13 @@ public class FileChangeListener implements Runnable{
                 WatchKey key = service.take();
                 for (WatchEvent<?> event : key.pollEvents()) {
                     if (filepath.getFileName().equals(event.context())) {
+
                         // File has changed, get the new lines
                         try (RandomAccessFile raf = new RandomAccessFile(filepath.toFile(), "r")) {
                             long currentLength = raf.length();
-                            if (currentLength > lastKnownPosition) {
+                            if(currentLength < lastKnownPosition){
+                                lastKnownPosition = 0;
+                            } else if (currentLength > lastKnownPosition) {
                                 raf.seek(lastKnownPosition); // Move to the last known position
 
                                 String line;

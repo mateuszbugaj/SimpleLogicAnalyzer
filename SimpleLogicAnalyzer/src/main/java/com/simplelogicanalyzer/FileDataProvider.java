@@ -11,11 +11,15 @@ import java.util.ConcurrentModificationException;
 import java.util.List;
 
 public class FileDataProvider implements DataProvider{
-    private final ObservableList<DataPoint> probeData = FXCollections.observableArrayList();
     private final ArrayList<ObservableList<DataPoint>> logDataList = new ArrayList<>();
+    private final ArrayList<Signal> signals;
+    private final Signal logSignal;
 
 
     public FileDataProvider(ArrayList<Signal> signals, String probeDataFile, Signal logSignal, List<String> logFiles){
+        this.signals = signals;
+        this.logSignal = logSignal;
+
         ObservableList<String> probeRawData = FXCollections.observableArrayList();
         getFileChangeListener(probeDataFile, probeRawData);
         probeRawData.addListener((ListChangeListener<String>) change -> {
@@ -51,7 +55,7 @@ public class FileDataProvider implements DataProvider{
         }
     }
 
-    private Thread getFileChangeListener(String filePath, ObservableList<String> output){
+    private void getFileChangeListener(String filePath, ObservableList<String> output){
         System.out.println("Creating file listener for " + filePath);
         FileChangeListener fileListener = new FileChangeListener(filePath, output);
 
@@ -59,7 +63,6 @@ public class FileDataProvider implements DataProvider{
         thread.setDaemon(true);
         thread.start();
 
-        return thread;
     }
 
     private List<Integer> parseProbeData(String s){
@@ -80,5 +83,15 @@ public class FileDataProvider implements DataProvider{
     @Override
     public void send(String msg) {
         // TODO: Not implemented (files don't require)
+    }
+
+    @Override
+    public void clear() {
+        // Refresh signal charts by adding one datapoint
+        for (Signal signal : signals) {
+            signal.series.getData().add(new XYChart.Data<>(signal.series.getData().size(), 0));
+        }
+
+        logSignal.series.getData().add(new XYChart.Data<>(logSignal.series.getData().size(), 0));
     }
 }

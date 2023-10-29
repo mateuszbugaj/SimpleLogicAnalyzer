@@ -258,15 +258,19 @@ public class SimpleLogicAnalyzer extends Application {
             if (pauseButton.getText().equals("PAUSE")){
                 pauseButton.setText("UNPAUSE");
                 signals.forEach(signal -> signal.pause(true));
+                logSignal.pause(true);
             } else {
                 pauseButton.setText("PAUSE");
                 signals.forEach(signal -> signal.pause(false));
+                logSignal.pause(false);
             }
         });
 
         clearButton.setOnAction(actionEvent -> {
             timestamp.set(System.currentTimeMillis());
             signals.forEach(Signal::clear);
+            logSignal.clear();
+            dataProvider.clear();
         });
 
         // Create selectable list of signals to show

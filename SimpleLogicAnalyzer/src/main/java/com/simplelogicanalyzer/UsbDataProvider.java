@@ -12,11 +12,15 @@ import java.io.IOException;
 import java.util.*;
 
 public class UsbDataProvider implements DataProvider{
-    private final ObservableList<DataPoint> probeData = FXCollections.observableArrayList();
     private final ArrayList<ObservableList<DataPoint>> logDataList = new ArrayList<>();
     private final SerialPort probeDevice;
+    private final ArrayList<Signal> signals;
+    private final Signal logSignal;
 
     public UsbDataProvider(ArrayList<Signal> signals, String probeDeviceName, Signal logSignal, List<String> logDeviceNames) {
+        this.signals = signals;
+        this.logSignal = logSignal;
+
         ObservableList<String> probeRawData = FXCollections.observableArrayList();
         probeDevice = getDeviceListener(probeDeviceName, probeRawData);
         probeRawData.addListener((ListChangeListener<String>) change -> {
@@ -96,5 +100,15 @@ public class UsbDataProvider implements DataProvider{
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public void clear() {
+        // Refresh signal charts by one datapoint.
+        for (Signal signal : signals) {
+            signal.series.getData().add(new XYChart.Data<>(signal.series.getData().size(), 0));
+        }
+
+        logSignal.series.getData().add(new XYChart.Data<>(logSignal.series.getData().size(), 0));
     }
 }

@@ -9,4 +9,5 @@ import java.util.List;
 public interface DataProvider {
     ArrayList<ObservableList<DataPoint>> getLogDataList();
     void send(String msg);
+    void clear();
 }
