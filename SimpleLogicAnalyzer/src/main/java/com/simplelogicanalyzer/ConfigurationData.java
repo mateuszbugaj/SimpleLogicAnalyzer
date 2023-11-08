@@ -1,26 +1,30 @@
 package com.simplelogicanalyzer;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.List;
 
 public class ConfigurationData {
-
-    private String logicProbe;
-    private List<String> loggingProbe;
+    @JsonProperty("logicProbe")
+    private Probe logicProbe;
+    @JsonProperty("loggingProbe")
+    private List<Probe> loggingProbe;
+    @JsonProperty("signals")
     private List<String> signals;
 
-    public String getLogicProbe() {
+    public Probe getLogicProbe() {
         return logicProbe;
     }
 
-    public void setLogicProbe(String logicProbe) {
+    public void setLogicProbe(Probe logicProbe) {
         this.logicProbe = logicProbe;
     }
 
-    public List<String> getLoggingProbe() {
+    public List<Probe> getLoggingProbe() {
         return loggingProbe;
     }
 
-    public void setLoggingProbe(List<String> loggingProbe) {
+    public void setLoggingProbe(List<Probe> loggingProbe) {
         this.loggingProbe = loggingProbe;
     }
 

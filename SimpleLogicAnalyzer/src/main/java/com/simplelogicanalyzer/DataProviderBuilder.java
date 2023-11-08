@@ -21,7 +21,7 @@ public class DataProviderBuilder {
     }
 
     public DataProvider getDataProvider(){
-        if(Paths.get(configurationData.getLogicProbe()).startsWith(Paths.get("/dev/"))){
+        if(configurationData.getLogicProbe().getPort() != null){
             return new UsbDataProvider(signals, configurationData.getLogicProbe(), logSignal, configurationData.getLoggingProbe());
         } else {
             return new FileDataProvider(signals, configurationData.getLogicProbe(), logSignal, configurationData.getLoggingProbe());

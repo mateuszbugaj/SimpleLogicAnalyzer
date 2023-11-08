@@ -16,12 +16,12 @@ public class FileDataProvider implements DataProvider{
     private final Signal logSignal;
 
 
-    public FileDataProvider(ArrayList<Signal> signals, String probeDataFile, Signal logSignal, List<String> logFiles){
+    public FileDataProvider(ArrayList<Signal> signals, Probe probeDataFile, Signal logSignal, List<Probe> logFiles){
         this.signals = signals;
         this.logSignal = logSignal;
 
         ObservableList<String> probeRawData = FXCollections.observableArrayList();
-        getFileChangeListener(probeDataFile, probeRawData);
+        getFileChangeListener(probeDataFile.getFile(), probeRawData);
         probeRawData.addListener((ListChangeListener<String>) change -> {
             Platform.runLater(() -> {
                 while(change.next()){
@@ -38,11 +38,11 @@ public class FileDataProvider implements DataProvider{
             });
         });
 
-        for(String logFile : logFiles){
+        for(Probe logFile : logFiles){
             ObservableList<String> logRawData = FXCollections.observableArrayList();
             ObservableList<DataPoint> logData = FXCollections.observableArrayList();
 
-            getFileChangeListener(logFile, logRawData);
+            getFileChangeListener(logFile.getFile(), logRawData);
             logRawData.addListener((ListChangeListener<String>) change -> {
                 while(change.next()){
                     logData.add(0, new DataPoint(change.getAddedSubList().get(0), System.currentTimeMillis()));

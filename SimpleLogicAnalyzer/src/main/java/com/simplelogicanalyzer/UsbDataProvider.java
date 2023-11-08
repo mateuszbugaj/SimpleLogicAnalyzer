@@ -13,16 +13,16 @@ import java.util.*;
 
 public class UsbDataProvider implements DataProvider{
     private final ArrayList<ObservableList<DataPoint>> logDataList = new ArrayList<>();
-    private final SerialPort probeDevice;
+    private final SerialPort probeDevicePort;
     private final ArrayList<Signal> signals;
     private final Signal logSignal;
 
-    public UsbDataProvider(ArrayList<Signal> signals, String probeDeviceName, Signal logSignal, List<String> logDeviceNames) {
+    public UsbDataProvider(ArrayList<Signal> signals, Probe probeDevice, Signal logSignal, List<Probe> logDevices) {
         this.signals = signals;
         this.logSignal = logSignal;
 
         ObservableList<String> probeRawData = FXCollections.observableArrayList();
-        probeDevice = getDeviceListener(probeDeviceName, probeRawData);
+        probeDevicePort = getDeviceListener(probeDevice, probeRawData);
         probeRawData.addListener((ListChangeListener<String>) change -> {
             Platform.runLater(() -> {
                 while(change.next()){
@@ -39,7 +39,7 @@ public class UsbDataProvider implements DataProvider{
             });
         });
 
-        for(String logDevice : logDeviceNames){
+        for(Probe logDevice : logDevices){
             ObservableList<String> logRawData = FXCollections.observableArrayList();
             ObservableList<DataPoint> logData = FXCollections.observableArrayList();
 
@@ -56,14 +56,14 @@ public class UsbDataProvider implements DataProvider{
         }
     }
 
-    private SerialPort getDeviceListener(String device, ObservableList<String> output){
+    private SerialPort getDeviceListener(Probe device, ObservableList<String> output){
         System.out.println("Creating listener for " + device);
-        Optional<SerialPort> serialPort = Arrays.stream(SerialPort.getCommPorts()).filter(port -> ("/dev/" + port.getSystemPortName()).equals(device)).findAny();
+        Optional<SerialPort> serialPort = Arrays.stream(SerialPort.getCommPorts()).filter(port -> ("/dev/" + port.getSystemPortName()).equals(device.getPort())).findAny();
 
         if(serialPort.isPresent()){
             try {
                 serialPort.get().setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
-                serialPort.get().setBaudRate(9600);
+                serialPort.get().setBaudRate(device.getBaudRate());
                 serialPort.get().openPort();
                 serialPort.get().getInputStream().skip(serialPort.get().bytesAvailable());
                 serialPort.get().addDataListener(new SerialPortDataListenerImpl(output));
@@ -96,7 +96,7 @@ public class UsbDataProvider implements DataProvider{
     @Override
     public void send(String msg) {
         try {
-            probeDevice.getOutputStream().write(msg.getBytes());
+            probeDevicePort.getOutputStream().write(msg.getBytes());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

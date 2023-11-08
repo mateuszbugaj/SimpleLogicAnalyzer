@@ -80,7 +80,7 @@ public class SimpleLogicAnalyzer extends Application {
         logButtons.setPadding(new Insets(5));
         for(int i = 0; i < dataProvider.getLogDataList().size(); i++){
             ObservableList<DataPoint> logList = dataProvider.getLogDataList().get(i);
-            Button showLogButton = new Button(configData.getLoggingProbe().get(i));
+            Button showLogButton = new Button(configData.getLoggingProbe().get(i).getName());
             showLogButton.setOnAction(new EventHandler<ActionEvent>() {
                 @Override
                 public void handle(ActionEvent actionEvent) {

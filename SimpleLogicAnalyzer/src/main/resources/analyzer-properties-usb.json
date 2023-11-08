@@ -1,5 +1,8 @@
 {
-  "logicProbe": "/dev/ttyUSB2",
-  "loggingProbe": ["/dev/ttyUSB0", "/dev/ttyUSB1"],
+  "logicProbe": { "port": "/dev/ttyUSB2", "baud-rate":  9600 },
+  "loggingProbe": [
+    { "name": "Receiver", "port": "/dev/ttyUSB0", "baud-rate":  38400 },
+    { "name": "Transceiver", "port": "/dev/ttyUSB1", "baud-rate": 9600 }
+  ],
   "signals": ["SDA", "SCL", "Transmitter SDA", "Transmitter SCL", "Receiver SDA", "Receiver SCL"]
 }
