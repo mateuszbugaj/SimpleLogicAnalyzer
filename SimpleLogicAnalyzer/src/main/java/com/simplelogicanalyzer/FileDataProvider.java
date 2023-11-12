@@ -81,8 +81,13 @@ public class FileDataProvider implements DataProvider{
     }
 
     @Override
-    public void send(String msg) {
+    public void sendProbe(String msg) {
         // TODO: Not implemented (files don't require)
+    }
+
+    @Override
+    public void sendLogging(String msg, String target) {
+
     }
 
     @Override

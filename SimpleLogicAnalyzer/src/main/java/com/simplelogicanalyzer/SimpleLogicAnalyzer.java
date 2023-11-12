@@ -6,6 +6,7 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleLongProperty;
+import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
@@ -23,19 +24,16 @@ import javafx.stage.Stage;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
-import java.util.stream.Stream;
 
-import com.fazecast.jSerialComm.SerialPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import javafx.stage.WindowEvent;
 
 public class SimpleLogicAnalyzer extends Application {
 
     private final SimpleBooleanProperty collectingData = new SimpleBooleanProperty(false);
     private final SimpleBooleanProperty showingLogs = new SimpleBooleanProperty(false);
+    private final SimpleStringProperty consoleTarget = new SimpleStringProperty("");
     private final SimpleLongProperty timestamp = new SimpleLongProperty();
     private ConfigurationData configData;
     private final ArrayList<Signal> signals = new ArrayList<>();
@@ -69,8 +67,30 @@ public class SimpleLogicAnalyzer extends Application {
         DataProviderBuilder dataProviderBuilder = new DataProviderBuilder(configData, signals, logSignal);
         dataProvider = dataProviderBuilder.getDataProvider();
 
+        VBox logsAndConsole = new VBox();
+        logsAndConsole.setPrefWidth(400);
+        logsAndConsole.visibleProperty().bind(showingLogs);
+        logsAndConsole.managedProperty().bind(showingLogs);
+
+        HBox consoleTextFieldAndButton = new HBox();
+        TextField consoleField = new TextField();
+        consoleField.setPromptText("Command...");
+        consoleField.prefWidthProperty().bind(consoleTextFieldAndButton.widthProperty());
+
+        Button consoleSendButton = new Button("Send");
+        consoleSendButton.setMinWidth(80);
+        consoleSendButton.setOnAction(event -> {
+            dataProvider.sendLogging(consoleField.getText() + '\r', consoleTarget.get());
+            consoleField.setText("");
+        });
+
+        consoleTextFieldAndButton.getChildren().addAll(consoleField, consoleSendButton);
+        logsAndConsole.getChildren().add(consoleTextFieldAndButton);
+
         ListView<DataPoint> logsListView = createLogList();
-        mainLayout.setRight(logsListView);
+        logsListView.prefHeightProperty().bind(logsAndConsole.heightProperty());
+        logsAndConsole.getChildren().add(logsListView);
+        mainLayout.setRight(logsAndConsole);
 
         BorderPane toolbarLayout = createToolbar();
         mainLayout.setTop(toolbarLayout);
@@ -81,6 +101,7 @@ public class SimpleLogicAnalyzer extends Application {
         for(int i = 0; i < dataProvider.getLogDataList().size(); i++){
             ObservableList<DataPoint> logList = dataProvider.getLogDataList().get(i);
             Button showLogButton = new Button(configData.getLoggingProbe().get(i).getName());
+            int finalI = i;
             showLogButton.setOnAction(new EventHandler<ActionEvent>() {
                 @Override
                 public void handle(ActionEvent actionEvent) {
@@ -90,10 +111,12 @@ public class SimpleLogicAnalyzer extends Application {
                             showingLogs.set(false);
                         } else {
                             logsListView.setItems(logList);
+                            consoleTarget.set(configData.getLoggingProbe().get(finalI).getPort());
                         }
                     } else {
                         showingLogs.set(true);
                         logsListView.setItems(logList);
+                        consoleTarget.set(configData.getLoggingProbe().get(finalI).getPort());
                     }
                 }
             });
@@ -102,9 +125,9 @@ public class SimpleLogicAnalyzer extends Application {
         }
         toolbarLayout.setRight(logButtons);
 
-        Scene scene = new Scene(mainLayout,800,600);
+        Scene scene = new Scene(mainLayout,1200,800);
         stage.setScene(scene);
-        stage.setFullScreen(true);
+//        stage.setFullScreen(true);
         stage.show();
 
         scene.addEventFilter(ScrollEvent.ANY, event -> {
@@ -116,6 +139,14 @@ public class SimpleLogicAnalyzer extends Application {
             if(event.getDeltaY() != 0){
                 signals.forEach(signal -> signal.scroll(event.getDeltaY()));
                 logSignal.scroll(event.getDeltaY());
+            }
+        });
+
+        stage.setOnCloseRequest(new EventHandler<WindowEvent>() {
+            @Override
+            public void handle(WindowEvent t) {
+                Platform.exit();
+                System.exit(0);
             }
         });
     }
@@ -247,12 +278,12 @@ public class SimpleLogicAnalyzer extends Application {
             if (collectingData.get()) {
                 collectingData.set(false);
                 startButton.setText("START");
-                dataProvider.send("stop");
+                dataProvider.sendProbe("stop");
             } else {
                 collectingData.set(true);
                 timestamp.set(System.currentTimeMillis());
                 startButton.setText("STOP");
-                dataProvider.send("start");
+                dataProvider.sendProbe("start");
             }
         });
 

@@ -14,6 +14,7 @@ import java.util.*;
 public class UsbDataProvider implements DataProvider{
     private final ArrayList<ObservableList<DataPoint>> logDataList = new ArrayList<>();
     private final SerialPort probeDevicePort;
+    private final ArrayList<SerialPort> loggingDevicePorts = new ArrayList<>();
     private final ArrayList<Signal> signals;
     private final Signal logSignal;
 
@@ -43,7 +44,7 @@ public class UsbDataProvider implements DataProvider{
             ObservableList<String> logRawData = FXCollections.observableArrayList();
             ObservableList<DataPoint> logData = FXCollections.observableArrayList();
 
-            getDeviceListener(logDevice, logRawData);
+            loggingDevicePorts.add(getDeviceListener(logDevice, logRawData));
             logRawData.addListener((ListChangeListener<String>) change -> {
                 while(change.next()){
                     logData.add(0, new DataPoint(change.getAddedSubList().get(0), System.currentTimeMillis()));
@@ -57,7 +58,7 @@ public class UsbDataProvider implements DataProvider{
     }
 
     private SerialPort getDeviceListener(Probe device, ObservableList<String> output){
-        System.out.println("Creating listener for " + device);
+        System.out.println("Creating listener for " + device.getPort());
         Optional<SerialPort> serialPort = Arrays.stream(SerialPort.getCommPorts()).filter(port -> ("/dev/" + port.getSystemPortName()).equals(device.getPort())).findAny();
 
         if(serialPort.isPresent()){
@@ -94,9 +95,31 @@ public class UsbDataProvider implements DataProvider{
     }
 
     @Override
-    public void send(String msg) {
+    public void sendProbe(String msg) {
         try {
             probeDevicePort.getOutputStream().write(msg.getBytes());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void sendLogging(String msg, String target) {
+        try {
+            ArrayList<SerialPort> combined = new ArrayList<>(loggingDevicePorts);
+            combined.add(probeDevicePort);
+
+            Optional<SerialPort> portOptional = combined
+                    .stream()
+                    .filter(device -> device.getSystemPortPath().equals(target))
+                    .findAny();
+
+            if(portOptional.isPresent()){
+                portOptional
+                        .get()
+                        .getOutputStream()
+                        .write(msg.getBytes());
+            }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
