@@ -1,8 +1,0 @@
-{
-  "logicProbe": { "file": "/home/mat/CrossCompiledI2C/output/logic_analyzer_snapshot.txt" },
-  "loggingProbe": [
-    { "name": "Transceiver", "file": "/home/mat/CrossCompiledI2C/output/master_log.txt" },
-    { "name": "Receiver", "file": "/home/mat/CrossCompiledI2C/output/slave_log.txt"}
-  ],
-  "signals": ["SDA", "SCL", "Transmitter SDA", "Transmitter SCL", "Receiver SDA", "Receiver SCL"]
-}
