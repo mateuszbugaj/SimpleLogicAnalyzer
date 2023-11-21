@@ -16,6 +16,9 @@ void setup() {
   Serial.begin(9600);
   pinMode(ACTIVATION_LED, OUTPUT);
   digitalWrite(ACTIVATION_LED, LOW);
+  for(int i = 0; i < PIN_COUNT; i++){
+    pinMode(pins[i], INPUT);
+  }
 }
 
 void loop() {
