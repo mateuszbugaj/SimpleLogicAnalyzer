@@ -133,5 +133,6 @@ public class UsbDataProvider implements DataProvider{
         }
 
         logSignal.series.getData().add(new XYChart.Data<>(logSignal.series.getData().size(), 0));
+        logDataList.forEach(List::clear);
     }
 }

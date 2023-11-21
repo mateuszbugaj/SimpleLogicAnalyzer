@@ -1,6 +1,5 @@
 package com.simplelogicanalyzer;
 
-import com.fasterxml.jackson.core.JsonParser;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -18,10 +17,12 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.chart.*;
 import javafx.scene.control.*;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
@@ -43,8 +44,9 @@ public class SimpleLogicAnalyzer extends Application {
     @Override
     public void start(Stage stage) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
-        InputStream propertiesInputStream = JsonParser.class.getClassLoader().getResourceAsStream(getParameters().getRaw().get(0));
-        if(propertiesInputStream == null){
+        String filePath = getParameters().getRaw().get(0);
+        InputStream propertiesInputStream = new FileInputStream(filePath);
+        if(propertiesInputStream.available() == 0){
             System.out.println("Analyzer properties file " + getParameters().getRaw().get(0) + " not found.");
             System.exit(0);
         }
@@ -77,11 +79,18 @@ public class SimpleLogicAnalyzer extends Application {
         consoleField.setPromptText("Command...");
         consoleField.prefWidthProperty().bind(consoleTextFieldAndButton.widthProperty());
 
-        Button consoleSendButton = new Button("Send");
-        consoleSendButton.setMinWidth(80);
-        consoleSendButton.setOnAction(event -> {
+        Runnable sendAction = () -> {
             dataProvider.sendLogging(consoleField.getText() + '\r', consoleTarget.get());
             consoleField.setText("");
+        };
+
+        Button consoleSendButton = new Button("Send");
+        consoleSendButton.setMinWidth(80);
+        consoleSendButton.setOnAction(event -> sendAction.run());
+        consoleField.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ENTER) {
+                sendAction.run();
+            }
         });
 
         consoleTextFieldAndButton.getChildren().addAll(consoleField, consoleSendButton);
